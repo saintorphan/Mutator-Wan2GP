@@ -47,6 +47,34 @@ def work_path(suffix: str = ".mp4") -> str:
     return str(cache_dir() / f"work_{uuid4().hex}{suffix}")
 
 
+def renders_dir() -> Path:
+    """Cache subdir for per-segment rendered mp4s (keyed by render signature)."""
+    d = cache_dir() / "renders"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def thumbs_dir() -> Path:
+    """Cache subdir for per-segment filmstrip thumbnails (keyed by signature)."""
+    d = cache_dir() / "thumbs"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def cached_render_path(sig: str) -> str:
+    """Deterministic mp4 path for a segment render signature (see core.render).
+
+    Same ``sig`` -> same file, so an unchanged segment is a cache hit and a
+    trim/edit (which changes the sig) is a cache miss that regenerates.
+    """
+    return str(renders_dir() / f"r_{sig}.mp4")
+
+
+def cached_thumb_path(sig: str) -> str:
+    """Deterministic filmstrip-PNG path for a segment render signature."""
+    return str(thumbs_dir() / f"t_{sig}.png")
+
+
 def outputs_dir(save_path: str | None = None) -> str:
     """Absolute, existing outputs dir from the host's ``save_path`` global.
 
@@ -139,10 +167,15 @@ def prune_cache(max_age_hours: float = 24.0) -> None:
     """
     try:
         cutoff = time.time() - max_age_hours * 3600.0
-        for p in cache_dir().iterdir():
+        roots = [cache_dir(), renders_dir(), thumbs_dir()]
+        for root in roots:
             try:
-                if p.is_file() and p.stat().st_mtime < cutoff:
-                    p.unlink()
+                for p in root.iterdir():
+                    try:
+                        if p.is_file() and p.stat().st_mtime < cutoff:
+                            p.unlink()
+                    except OSError:
+                        pass
             except OSError:
                 pass
     except OSError:

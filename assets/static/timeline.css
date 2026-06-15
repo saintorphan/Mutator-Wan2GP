@@ -1,0 +1,151 @@
+/* Mutator single-track timeline — every rule scoped under .mut-tl so it never
+   leaks into the host Gradio UI. Injected as a <style> blob by ui/timeline.py
+   timeline_css() inside the mount gr.HTML. Cyan (#00d9ff) on charcoal.
+   Author: saintorphan. */
+
+.mut-tl {
+  --mut-cyan: #00d9ff;
+  --mut-cyan-dk: #0892ad;
+  --mut-bg: #15161a;
+  --mut-lane: #1f2128;
+  --mut-edge: #33363f;
+  color: #e9e6df;
+  font-size: 14px;
+  user-select: none;
+}
+
+/* horizontal scroll container — the lane/ruler can exceed the viewport width */
+.mut-tl .mut-scroll {
+  position: relative;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: var(--mut-bg);
+  border: 1px solid var(--mut-edge);
+  border-radius: 8px;
+  padding: 0 0 8px 0;
+}
+
+/* ruler — no track-head offset on a single lane, so it starts at left:0 */
+.mut-tl .mut-ruler {
+  position: relative;
+  height: 26px;
+  min-width: 600px;
+  border-bottom: 1px solid var(--mut-edge);
+  cursor: text;            /* scrub-to-set-playhead */
+}
+.mut-tl .mut-tick {
+  position: absolute;
+  top: 0;
+  height: 26px;
+  border-left: 1px solid var(--mut-edge);
+  padding-left: 4px;
+  color: #8b8f99;
+  font-size: 12px;
+  line-height: 26px;
+  pointer-events: none;
+}
+
+/* the single lane the clips live on */
+.mut-tl .mut-lane {
+  position: relative;
+  height: 84px;
+  min-width: 600px;
+  background: var(--mut-lane);
+  border-bottom: 1px solid var(--mut-edge);
+}
+
+/* a clip = one ordered segment; translateX(start) + width(dur) set in JS.
+   touch-action:none is MANDATORY — without it pointer drags on the handles
+   get hijacked by the scroll container's touch panning. */
+.mut-tl .mut-clip {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  height: 72px;
+  box-sizing: border-box;
+  background-color: var(--mut-cyan-dk);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border: 1px solid var(--mut-cyan-dk);
+  border-radius: 5px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  box-shadow: inset 0 0 0 100px rgba(4, 24, 30, 0.18);
+}
+.mut-tl .mut-clip:active { cursor: grabbing; }
+
+/* selected segment — the load-bearing cyan outline + raised stacking */
+.mut-tl .mut-clip.sel {
+  outline: 2px solid var(--mut-cyan);
+  outline-offset: -1px;
+  z-index: 3;
+  box-shadow: inset 0 0 0 100px rgba(0, 217, 255, 0.10), 0 0 8px rgba(0, 217, 255, 0.35);
+}
+
+/* clip label span — appended inside .mut-clip */
+.mut-tl .mut-clip .label {
+  position: absolute;
+  left: 6px;
+  bottom: 3px;
+  right: 6px;
+  font-size: 13px;
+  color: #eafdff;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+/* graded badge dot — shown when a clip carries non-neutral colour edits */
+.mut-tl .mut-clip.graded::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mut-cyan);
+  box-shadow: 0 0 4px var(--mut-cyan), 0 0 0 1px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* edge trim grips — drag to adjust in/out */
+.mut-tl .mut-handle {
+  position: absolute;
+  top: 0;
+  width: 7px;
+  height: 100%;
+  cursor: ew-resize;
+  background: rgba(0, 0, 0, 0.22);
+  z-index: 4;
+}
+.mut-tl .mut-handle:hover { background: rgba(0, 217, 255, 0.45); }
+.mut-tl .mut-handle.l { left: 0; border-right: 1px solid rgba(0, 0, 0, 0.3); }
+.mut-tl .mut-handle.r { right: 0; border-left: 1px solid rgba(0, 0, 0, 0.3); }
+
+/* playhead — spans ruler + lane; left:0 origin + JS translateX (no track heads) */
+.mut-tl .mut-playhead {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 100%;
+  background: #ff3b3b;
+  pointer-events: none;
+  z-index: 6;
+}
+
+/* empty-state placeholder text shown before the first source loads */
+.mut-tl .mut-empty {
+  padding: 28px 20px;
+  text-align: center;
+  color: #8b8f99;
+  font-size: 15px;
+  line-height: 1.7;
+}
