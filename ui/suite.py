@@ -143,9 +143,9 @@ def build_ui() -> dict:
             c["save_copy_btn"] = gr.Button(
                 "📑 Save as copy", variant="primary", interactive=False)
 
-        # Embedded SendTo FRAME panel slot — the plugin builds the panel inside
-        # this Column via sendto.embed.build_send_panel in create_ui (best-effort;
-        # absent SendTo just leaves the slot empty).
+        # Embedded send FRAME panel slot — the plugin builds the panel inside
+        # this Column via the NATIVE ui.sendout.build_send_panel in create_ui
+        # (SendTo is vendored in; no external sendto package required).
         with gr.Column(elem_id="mutator-send-frame") as send_frame_slot:
             pass
         c["send_frame_slot"] = send_frame_slot

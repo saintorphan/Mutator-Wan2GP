@@ -281,15 +281,8 @@ class Mutator(WAN2GPPlugin):
             c = suite.build_ui()
             self._c = c
 
-            # -- embedded SendTo: FRAME send panel (best-effort) -------------
-            # Sends the still at the selected segment's playhead frame to any
-            # "image" target. Absent SendTo just omits the panel.
-            self._build_frame_panel(c)
-
-            # -- "Send edited clip" target list ------------------------------
-            self._build_clip_targets(c)
-
-            # -- store component handles on self -----------------------------
+            # -- store component handles on self (BEFORE building the send
+            #    panels, which reference self.tl_to_py / self.main_tabs) -------
             self.tl_to_py = c["tl_to_py"]
             self.tl_from_py = c["tl_from_py"]
             self.crop_to_py = c["crop_to_py"]
@@ -308,6 +301,13 @@ class Mutator(WAN2GPPlugin):
             self.redo_btn = c["redo_btn"]
             # The selection-driven tool row, 1:1 with suite.TOOL_OUT_KEYS.
             self._tool_outs = [c[k] for k in suite.TOOL_OUT_KEYS]
+
+            # -- embedded send panels (SendTo wired in NATIVELY — always
+            #    render; no external sendto package needed) ------------------
+            # Frame panel: the still at the selected segment's playhead frame.
+            self._build_frame_panel(c)
+            # "Send edited clip" targets: Continue Video + path receivers.
+            self._build_clip_targets(c)
 
             # Fresh track baseline.
             self._track = Track()
@@ -346,10 +346,11 @@ class Mutator(WAN2GPPlugin):
     def _build_frame_panel(self, c):
         """Build the embedded SendTo FRAME panel inside c['send_frame_slot'].
 
-        Sends the source frame at the selected segment's playhead. Best-effort:
-        absent SendTo just leaves the slot empty."""
+        Sends the source frame at the selected segment's playhead. SendTo is
+        wired in NATIVELY (ui.sendout / core.sendout) so the panel always renders
+        — it needs no external ``sendto`` plugin."""
         try:
-            from sendto.embed import build_send_panel
+            from .ui.sendout import build_send_panel
 
             def _frame_at(_unused=None):
                 sel = self._track.selected()
@@ -370,26 +371,28 @@ class Mutator(WAN2GPPlugin):
                     get_settings=getattr(self, "get_current_model_settings", None),
                     title="📤 Send frame to")
         except Exception:
-            traceback.print_exc()  # SendTo not installed -> no frame panel
+            traceback.print_exc()  # never fatal — the editor still works
 
     def _build_clip_targets(self, c):
         """Populate the "Send edited clip" dropdown: Continue Video + any
-        path-payload SendTo receivers. Decoupled — no plugin class is imported;
+        path-payload receivers discovered via the shared ``sendto.json`` contract.
+        SendTo is wired in NATIVELY (core.sendout) — no ``sendto`` package import;
         the host "Continue Video" target needs only get_current_model_settings."""
         clip_targets = []
         if callable(getattr(self, "get_current_model_settings", None)):
             clip_targets.append(
                 {"label": "▶ Continue Video (Media Generator)", "kind": "continue"})
         try:
-            from sendto.targets import available_targets, enqueue as _enqueue
-            self._sendto_enqueue = _enqueue
-            for t in available_targets(include_host=False):
+            from .core import sendout
+            self._sendto_enqueue = sendout.enqueue
+            for t in sendout.available_targets(include_host=False):
                 if t.get("payload") == "path" and t.get("tab") != PLUGIN_ID:
                     clip_targets.append(
                         {"label": t["label"], "kind": "plugin",
                          "tab": t.get("tab"), "inbox_key": t.get("inbox_key")})
         except Exception:
-            self._sendto_enqueue = None  # SendTo absent -> host target only
+            traceback.print_exc()
+            self._sendto_enqueue = None
 
         self._clip_targets_by_label = {t["label"]: t for t in clip_targets}
         labels = [t["label"] for t in clip_targets]
@@ -1024,13 +1027,14 @@ class Mutator(WAN2GPPlugin):
                     "model there if the current one isn't one.")
             return gr.update(selected="media_gen"), time.time()
 
-        # path-payload plugin receiver (e.g. Reel2Reel) via the SendTo contract.
-        if not callable(getattr(self, "_sendto_enqueue", None)):
-            gr.Warning("SendTo isn't installed — can't hand off to that plugin.")
-            return noop, noop
+        # path-payload plugin receiver (e.g. Reel2Reel) via the shared sendto.json
+        # contract — enqueue is native (core.sendout), so this is always wired.
+        enq = getattr(self, "_sendto_enqueue", None)
+        if not callable(enq):
+            from .core import sendout
+            enq = sendout.enqueue
         try:
-            self._sendto_enqueue(state_val, spec.get("inbox_key"), render_path,
-                                 payload="path")
+            enq(state_val, spec.get("inbox_key"), render_path, payload="path")
         except Exception:
             traceback.print_exc()
             gr.Warning("Could not hand the clip over.")
