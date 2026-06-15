@@ -3,10 +3,10 @@
   "author": "saintorphan",
   "version": "0.1.0",
   "description": "Single-clip video editor: load a clip from the gallery, an upload, or a SendTo hand-off, then trim/split on a frame-accurate mini-timeline, crop, resize, flip, change speed, and colour-correct — with undo/redo. Save in place or as a copy; send a frame or the edited clip onward via SendTo.",
-  "date": "2026-06-14",
-  "wan2gp_version": "11.90",
+  "date": "2026-06-15",
+  "wan2gp_version": "12.23",
   "license": "WanGP Community License 2.0",
   "url": "https://github.com/saintorphan/Mutator-Wan2GP",
-  "type": ["extension"],
+  "type": ["app"],
   "uninstallable": true
 }

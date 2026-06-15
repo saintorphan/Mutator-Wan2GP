@@ -1,5 +1,7 @@
 # Mutator — a Wan2GP plugin
 
+<p align="center"><img src="assets/mutator_logo.png" alt="Mutator" width="640"></p>
+
 A single-clip video editor, living in its own tab. Think of it as a *lite*
 reel editor: load one clip, work it over with a frame-accurate mini-timeline
 and a stack of quick edits, then save it — in place or as a copy — or hand it
@@ -109,7 +111,8 @@ downloads, no GPU.
 - Saved copies land in the outputs **folder**; they appear in the on-screen
   gallery after the next gallery refresh / restart.
 - "Save in place" is destructive — it overwrites the original file.
-- Video is re-encoded with `libx264` (`-crf 18 -pix_fmt yuv420p`) on edit, so
-  cuts and effects are frame-accurate at the cost of a re-encode.
+- Video is re-encoded with `libx264` on edit — `-crf 16` for trims/splits and
+  `-crf 18 -pix_fmt yuv420p` for the effect passes — so cuts and effects are
+  frame-accurate at the cost of a re-encode.
 
 Author: saintorphan.

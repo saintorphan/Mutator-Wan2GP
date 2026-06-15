@@ -40,13 +40,16 @@ def flip_vf(horizontal: bool, vertical: bool) -> str:
 
 def scale_vf(width: int | None, height: int | None) -> str:
     """A ``scale=W:H`` fragment; an unspecified dim becomes ``-2`` (keep even &
-    preserve aspect, e.g. ``scale=1280:-2``). "" when both dims are unspecified."""
+    preserve aspect, e.g. ``scale=1280:-2``). Explicit dims are rounded down to
+    the nearest even value (min 2) because libx264 / yuv420p require even W and H
+    — without this, an odd typed width like 321 makes ffmpeg fail. "" when both
+    dims are unspecified."""
     w = int(width) if width else None
     h = int(height) if height else None
     if w is None and h is None:
         return ""
-    sw = str(w) if w is not None else "-2"
-    sh = str(h) if h is not None else "-2"
+    sw = str(max(2, (w // 2) * 2)) if w is not None else "-2"
+    sh = str(max(2, (h // 2) * 2)) if h is not None else "-2"
     return f"scale={sw}:{sh}"
 
 

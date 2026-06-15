@@ -8,12 +8,13 @@ outputs dir or overwrites the original source in place.
 Ported from Trimline's ``core/paths.py`` (collision-safe ``name(2).ext`` naming
 to mirror Wan2GP's ``get_available_filename``), adapted for Mutator's cache and
 working-file model. No Gradio/host imports — unit-testable. Dependency-light:
-pathlib, shutil, uuid, os only.
+pathlib, shutil, uuid, os, time only.
 """
 from __future__ import annotations
 
 import os
 import shutil
+import time
 from pathlib import Path
 from uuid import uuid4
 
@@ -126,3 +127,23 @@ def save_in_place(src: str, dest: str) -> None:
                 tmp.unlink()
         except OSError:
             pass
+
+
+def prune_cache(max_age_hours: float = 24.0) -> None:
+    """Best-effort cleanup of stale working files from :func:`cache_dir`.
+
+    Every edit writes a fresh ``work_<uuid>.mp4`` (and a split discards one half),
+    plus filmstrips/thumbnails, so the cache grows over a long session and
+    persists across restarts. Called once on plugin load to reclaim anything
+    older than *max_age_hours*. Never raises — the cache is disposable.
+    """
+    try:
+        cutoff = time.time() - max_age_hours * 3600.0
+        for p in cache_dir().iterdir():
+            try:
+                if p.is_file() and p.stat().st_mtime < cutoff:
+                    p.unlink()
+            except OSError:
+                pass
+    except OSError:
+        pass

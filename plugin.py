@@ -31,7 +31,7 @@ import gradio as gr
 from shared.utils.plugins import WAN2GPPlugin
 
 from .core import clipstate, ffmpeg, inbox, ops, paths, trim
-from .ui import filmstrip, styles, suite
+from .ui import filmstrip, logo, styles, suite
 
 try:  # host ships gradio_rangeslider (used in wgp.py); two plain sliders otherwise
     from gradio_rangeslider import RangeSlider  # noqa: F401
@@ -109,6 +109,7 @@ class Mutator(WAN2GPPlugin):
     # -- lifecycle ----------------------------------------------------------
     def setup_ui(self):
         self._register_inbox_alias()
+        paths.prune_cache()  # reclaim stale working files from earlier sessions
 
         self.request_component("state")
         self.request_component("output")
@@ -199,13 +200,11 @@ class Mutator(WAN2GPPlugin):
         # Mutator is ffmpeg-only, so it is unused.
         self._api = api_session
         with gr.Column(elem_id="mutator-root"):
-            c = suite.build_ui(_HAVE_RANGESLIDER)
-            self._c = c
-
-            # -- tab accent: cyan/teal outline on the Mutator tab button -----
-            # (each sibling plugin uses a distinct accent colour). A <style> plus
-            # a tiny JS tagger that finds the tab button by its label text and
-            # adds the .mutator-tabbtn class the CSS targets.
+            # -- tab accent + logo banner (banner first, at the very top) -----
+            # Each sibling plugin uses a distinct accent colour: a <style> plus a
+            # tiny JS tagger that finds the tab button by its label and adds the
+            # .mutator-tabbtn class. Then the logo banner, sized/positioned like
+            # Image Suite's (top of the tab, content lines up beneath it).
             gr.HTML(f"<style>{styles.CSS}</style>", elem_classes="mutator-hidden")
             gr.HTML(
                 "<img src=x style='display:none' onerror=\"(function(){"
@@ -216,6 +215,10 @@ class Mutator(WAN2GPPlugin):
                 "mark();new MutationObserver(mark).observe(document.body,"
                 "{childList:true,subtree:true});})()\">",
                 elem_classes="mutator-hidden")
+            gr.HTML(logo.banner_html())
+
+            c = suite.build_ui(_HAVE_RANGESLIDER)
+            self._c = c
 
             # -- embedded SendTo: FRAME send panel ---------------------------
             # Sends the still at the current PLAYHEAD frame to any "image" target.
@@ -786,7 +789,7 @@ class Mutator(WAN2GPPlugin):
             gr.Info("Sent the edited clip to the Media Generator as the "
                     "Continue-Video source. Pick a video-continuation–capable "
                     "model there if the current one isn't one.")
-            return gr.update(selected="video_gen"), time.time()
+            return gr.update(selected="media_gen"), time.time()
 
         # path-payload plugin receiver (e.g. Reel2Reel) via the SendTo contract
         if not callable(getattr(self, "_sendto_enqueue", None)):

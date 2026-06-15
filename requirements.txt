@@ -1,13 +1,11 @@
-# Mutator leans on things Wan2GP already ships, plus a couple of small libs
-# used directly by the editing pipeline:
+# Mutator leans on what Wan2GP already ships; its only genuinely additive dep is
+# a fallback way to locate an ffmpeg binary:
 #   - ffmpeg / ffprobe (system binaries; the host sets FFMPEG_BINARY/FFPROBE_BINARY).
-#     imageio-ffmpeg is listed as a last-resort fallback so a standalone install
-#     can still locate an ffmpeg binary if none is on PATH.
-#   - Pillow / numpy: filmstrip + frame thumbnail compositing.
-#   - gradio_rangeslider (dual-handle trim slider) is HOST-PROVIDED and OPTIONAL.
-#     It already ships with Wan2GP; Mutator falls back to two plain sliders when
-#     it is missing. Uncomment the line below only for a standalone install.
+#     imageio-ffmpeg is a last-resort fallback so a standalone install can still
+#     locate an ffmpeg binary if none is on PATH.
+#   - Pillow is used for filmstrip / thumbnail compositing but is HOST-PROVIDED, so
+#     it is intentionally NOT re-declared here (re-pinning host deps can disturb
+#     Wan2GP's resolved versions).
+#   - gradio / gradio_rangeslider (the dual-handle trim slider) are host-provided
+#     and optional — Mutator falls back to two plain sliders without the rangeslider.
 imageio-ffmpeg
-Pillow
-numpy
-# gradio_rangeslider  # optional, host-provided

@@ -49,7 +49,6 @@ def build_ui(have_rangeslider: bool) -> dict:
     use_range = bool(have_rangeslider) and RangeSlider is not None
 
     gr.Markdown(
-        "## 🎞️ Mutator — single-clip video editor\n"
         "Load the clip selected in the gallery, upload one, or receive a "
         "hand-off from another tab, then trim / split on a frame-accurate "
         "mini-timeline, crop, resize, flip, change speed and colour-correct — "
