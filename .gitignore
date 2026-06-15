@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.codegraph/
+.DS_Store
+# working/scratch files
+.mutator_cache/
+# keep assets, ignore stray media
+*.mp4
+*.mov
+*.mkv
+*.webm
+!assets/**

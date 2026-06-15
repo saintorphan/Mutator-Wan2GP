@@ -1,0 +1,6 @@
+{
+  "tab": "Mutator",
+  "inbox_key": "mutator_inbox",
+  "payload": "path",
+  "targets": [{"label": "Mutator"}]
+}
