@@ -1,7 +1,7 @@
 {
   "name": "Mutator",
   "author": "saintorphan",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Per-clip single-track video editor with a real video-preview stage (transport controls + draggable crop overlay) synced to the timeline playhead, laid out preview | result side by side. Load a clip (gallery / upload / SendTo), build an ordered timeline of segments, then per-segment trim, splice, rejoin, crop with aspect presets, resize, flip, speed, reverse and colour — with undo/redo. Save in place or as a copy; send a frame or the edited clip onward via SendTo or Continue-Video.",
   "date": "2026-06-15",
   "wan2gp_version": "12.23",

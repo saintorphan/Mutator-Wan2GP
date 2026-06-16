@@ -90,6 +90,19 @@ button.mutator-tabbtn {
 }
 #mutator-send { margin: 0 0 14px 0; }
 
+/* Pack the stage column's content to the TOP so the tool row follows the
+   transport immediately. The row is align-items:stretch (so stage + result
+   read the same height), which makes Gradio's flex column stretch the stage
+   taller than its content; justify-content:flex-start + gap:0 stops that slack
+   from opening a dead band between the transport and the tool row. */
+#mutator-stage {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 0;
+}
+#mutator-stage > * { flex: 0 0 auto; }
+
 /* A zone caption via the empty ::before so the pipeline reads at a glance
    without the layout adding extra Markdown headers. */
 #mutator-stage::before,
@@ -127,20 +140,34 @@ button.mutator-tabbtn {
 /* ====================================================================== */
 
 /* The preview info line (speed · W×H of the selected clip) sits just under the
-   stage video, above the tool row. */
+   stage video, above the tool row. Keep its vertical margin tight so the tool
+   row follows the transport without a dead band. */
 #mutator-stage-info, #mutator-stage-info .prose {
-    color: #c7c7d1; font-size: 13px; margin: 8px 0 4px 2px;
+    color: #c7c7d1; font-size: 13px; margin: 6px 0 2px 2px;
 }
+/* Collapse the info line when empty (Gradio wraps the value in a .prose div, so
+   :empty on the outer block never matches — target the inner prose and zero the
+   whole block) so the tool row hugs the transport with no dead band. */
+#mutator-stage-info .prose:empty { display: none; }
+#mutator-stage-info:has(.prose:empty) { margin: 0; min-height: 0; padding: 0; }
+/* Kill Gradio's per-block vertical padding inside the stage column so the
+   mount → info → tool-row stack has no slack between them. */
+#mutator-stage > .block,
+#mutator-stage > .form,
+#mutator-stage > div > .block { padding-top: 0 !important; padding-bottom: 0 !important; }
 
 /* The tool row: a tight wrapping line of uniform square icon buttons matching
-   the transport size. */
+   the transport size, sitting directly under the transport/info line. */
 #mutator-tools {
-    display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0;
+    display: flex; flex-wrap: wrap; align-items: center;
+    gap: 6px; margin: 6px 0 2px;
 }
-/* Uniform square-ish icon buttons (same height as the transport). */
+/* Uniform square-ish icon buttons (same height + weight as the transport).
+   line-height:1 keeps the (now monochrome) glyphs vertically centred and the
+   same visual size across the whole row. */
 .mut-tool button, #mutator-tools button {
     width: 40px; min-width: 40px; height: 36px;
-    padding: 0; font-size: 16px;
+    padding: 0; font-size: 16px; line-height: 1; font-weight: 400;
 }
 
 /* RESIZE / SPEED popups: boxed, raised panels rendered just under the tool row

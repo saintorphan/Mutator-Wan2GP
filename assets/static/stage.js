@@ -47,7 +47,7 @@
   var S = {
     mounted: false,
     root: null, video: null, canvas: null, ctx: null, bar: null,
-    aspbar: null, readout: null,
+    readout: null,
 
     // current clip payload (source-second window + transform flags)
     url: "", segId: "", in_: 0, out: 0, speed: 1, reverse: false,
@@ -240,7 +240,6 @@
       S.canvas.style.display = S.cropMode ? "" : "none";
     }
     drawCropOverlay();
-    syncAspUI();
   }
 
   /* ----------------------------------------------------------------------- *
@@ -339,16 +338,14 @@
   }
 
   /* ----------------------------------------------------------------------- *
-   * Aspect-preset button UI sync                                            *
+   * Crop reset — select the whole frame (driven by the right-side drawer).  *
    * ----------------------------------------------------------------------- */
-  function syncAspUI() {
-    if (!S.aspbar) return;
-    var btns = S.aspbar.querySelectorAll("button[data-asp]");
-    for (var i = 0; i < btns.length; i++) {
-      var a = ASPMAP[btns[i].getAttribute("data-asp")] || 0;
-      var on = (S.aspect === 0) ? (a === 0) : (Math.abs(a - S.aspect) < 1e-6);
-      btns[i].classList.toggle("on", on);
-    }
+  function resetCrop() {
+    if (!S.hasClip) return;
+    S.crop = { x: 0, y: 0, w: S.srcW, h: S.srcH };
+    S.aspect = 0;
+    render();
+    pushExport();
   }
 
   /* ----------------------------------------------------------------------- *
@@ -513,6 +510,10 @@
    * Mount — build the stage DOM into #mut_stage_root                        *
    * ----------------------------------------------------------------------- */
   function buildSkeleton(root) {
+    // Clear FIRST (drops any prior stage / Py placeholder) so the skeleton is
+    // never appended twice into the same root. S.mounted is set true only after
+    // the build completes, below.
+    S.mounted = false;
     root.innerHTML = "";
     var wrap = el("div", "mut-stage");
 
@@ -530,24 +531,6 @@
       "No clip selected &mdash; load a clip and pick a segment on the timeline.");
     disp.appendChild(empty);
     wrap.appendChild(disp);
-
-    // Aspect-preset bar (above the transport).
-    var aspbar = el("div", "mut-stage-aspbar");
-    aspbar.appendChild(el("span", "mut-stage-asplbl", "Crop"));
-    var presets = ["free", "1:1", "4:3", "3:4", "16:9", "9:16"];
-    for (var i = 0; i < presets.length; i++) {
-      var b = el("button", presets[i] === "free" ? "on" : "");
-      b.type = "button";
-      b.setAttribute("data-asp", presets[i]);
-      b.textContent = presets[i] === "free" ? "Free" : presets[i];
-      aspbar.appendChild(b);
-    }
-    var rb = el("button", "mut-stage-reset");
-    rb.type = "button"; rb.setAttribute("data-act", "cropreset");
-    rb.title = "Select the whole frame";
-    rb.innerHTML = "&#8634; Reset";
-    aspbar.appendChild(rb);
-    wrap.appendChild(aspbar);
 
     // Transport bar.
     var bar = el("div", "mut-stage-transport");
@@ -573,7 +556,6 @@
     S.canvas = canvas;
     S.ctx = canvas.getContext("2d");
     S.bar = bar;
-    S.aspbar = aspbar;
     S.readout = ro;
     S.mounted = true;
 
@@ -594,22 +576,6 @@
     window.addEventListener("touchmove", move, { passive: false });
     window.addEventListener("mouseup", up);
     window.addEventListener("touchend", up);
-
-    // aspect presets + reset
-    S.aspbar.addEventListener("click", function (e) {
-      var b = e.target.closest("button");
-      if (!b) return;
-      if (b.getAttribute("data-act") === "cropreset") {
-        if (!S.hasClip) return;
-        S.crop = { x: 0, y: 0, w: S.srcW, h: S.srcH };
-        S.aspect = 0;
-        render(); pushExport();
-        return;
-      }
-      var a = b.getAttribute("data-asp");
-      if (a == null) return;
-      setAspect(ASPMAP[a] || 0);
-    });
 
     // transport
     S.bar.addEventListener("click", function (e) {
@@ -649,11 +615,20 @@
     window.addEventListener("resize", function () { render(); });
   }
 
+  // Strictly idempotent mount: build the skeleton at most once per live root.
+  // We never append into a root that already holds our stage. If Gradio replaced
+  // the mount div (so S.root is detached / the live root is empty), we rebuild;
+  // otherwise we return early without touching the DOM.
   function tryMount() {
     var root = document.getElementById(STAGE_ROOT);
-    if (root && (!root.querySelector(".mut-stage") || !S.mounted)) {
-      buildSkeleton(root);
+    if (!root) return;
+    // Already mounted into THIS live root with our stage present -> nothing to do.
+    if (S.mounted && S.root && root.contains(S.root) && root.querySelector(".mut-stage")) {
+      return;
     }
+    // A foreign .mut-stage already present (e.g. the Py placeholder built one but
+    // we're not tracking it) -> adopt by clearing, then build exactly once.
+    buildSkeleton(root);
   }
   function boot() {
     tryMount();
@@ -665,8 +640,15 @@
     try {
       new MutationObserver(function () {
         var root = document.getElementById(STAGE_ROOT);
-        // Gradio re-renders the tab -> our mount div is replaced; re-mount.
-        if (root && !root.querySelector(".mut-stage")) { S.mounted = false; tryMount(); }
+        if (!root) return;
+        // Only re-mount when our tracked stage is no longer in the live root
+        // (Gradio re-rendered the tab and replaced the mount div). A stage that
+        // is still attached is left untouched so we never append twice.
+        if (S.mounted && S.root && root.contains(S.root)) return;
+        if (!root.querySelector(".mut-stage") || !(S.root && root.contains(S.root))) {
+          S.mounted = false;
+          tryMount();
+        }
       }).observe(document.body, { childList: true, subtree: true });
     } catch (e) {}
   }
@@ -682,6 +664,7 @@
     toggleCropMode: toggleCropMode,
     setCropMode: setCropMode,
     setAspect: setAspectByName,
+    resetCrop: resetCrop,
     remount: tryMount
   };
 

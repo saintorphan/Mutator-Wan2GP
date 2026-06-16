@@ -67,9 +67,8 @@ def build_ui() -> dict:
     with gr.Row(elem_id="mutator-top"):
         # -- LEFT: the video-preview stage (transport + crop overlay) ------
         with gr.Column(elem_id="mutator-stage"):
-            gr.Markdown(
-                "**Preview** — play / scrub the selected clip · use the tools "
-                "below", elem_classes="mutator-stage-caption")
+            # The "PREVIEW" zone header (CSS #mutator-stage::before) already
+            # labels this column; no extra caption Markdown needed.
             # build_stage_widget() spreads stage_mount (#mut_stage_root) + the
             # crop pipe (mut_crop_to_py) + the clip injector (mut_stage_from_py).
             c.update(build_stage_widget())
@@ -88,7 +87,7 @@ def build_ui() -> dict:
                     "⤢", elem_classes=["mut-tool"], size="sm",
                     elem_id="mut-tool-resize")
                 c["speed_btn"] = gr.Button(
-                    "⏩", elem_classes=["mut-tool"], size="sm",
+                    "⏩︎", elem_classes=["mut-tool"], size="sm",
                     elem_id="mut-tool-speed")
                 # Clear mirror glyphs: ◧ horizontal-flip, ⬓ vertical-flip.
                 c["flip_h_btn"] = gr.Button(
@@ -97,14 +96,16 @@ def build_ui() -> dict:
                 c["flip_v_btn"] = gr.Button(
                     "⬓", elem_classes=["mut-tool"], size="sm",
                     elem_id="mut-tool-flipv")
+                # ◐ (half-filled circle) is an inherently monochrome glyph that
+                # reads as a colour/tone control and matches the transport weight.
                 c["color_btn"] = gr.Button(
-                    "🎨", elem_classes=["mut-tool"], size="sm",
+                    "◐", elem_classes=["mut-tool"], size="sm",
                     elem_id="mut-tool-color")
                 c["splice_btn"] = gr.Button(
-                    "✂", elem_classes=["mut-tool"], size="sm",
+                    "✂︎", elem_classes=["mut-tool"], size="sm",
                     elem_id="mut-tool-splice")
                 c["rejoin_btn"] = gr.Button(
-                    "⛓", elem_classes=["mut-tool"], size="sm",
+                    "⛓︎", elem_classes=["mut-tool"], size="sm",
                     elem_id="mut-tool-rejoin")
                 c["undo_btn"] = gr.Button(
                     "↶", elem_classes=["mut-tool"], size="sm",

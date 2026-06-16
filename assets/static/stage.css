@@ -12,6 +12,9 @@
   font-size: 13px;
   user-select: none;
   -webkit-user-select: none;
+  /* Hug content: video + transport only. No stretching, no dead vertical gap. */
+  display: block;
+  height: auto;
 }
 
 /* The display area: the video + the crop overlay canvas stacked exactly. */
@@ -66,47 +69,14 @@
   pointer-events: none;
 }
 
-/* ---- aspect-preset bar (crop ratios) -------------------------------------- */
-.mut-stage .mut-stage-aspbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 2px 2px;
-}
-.mut-stage .mut-stage-asplbl {
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  color: #8a8a9a;
-  font-weight: 700;
-  text-transform: uppercase;
-  margin-right: 2px;
-}
-.mut-stage .mut-stage-aspbar button {
-  background: #2a2a35;
-  border: 1px solid #3a3a48;
-  color: #cfcfe0;
-  border-radius: 6px;
-  padding: 4px 9px;
-  font-size: 11px;
-  cursor: pointer;
-  line-height: 1.1;
-}
-.mut-stage .mut-stage-aspbar button:hover { border-color: var(--mut-cyan-dk); }
-.mut-stage .mut-stage-aspbar button.on {
-  background: var(--mut-cyan);
-  border-color: var(--mut-cyan);
-  color: #06121a;
-  font-weight: 700;
-}
-.mut-stage .mut-stage-reset { margin-left: auto; }
-
 /* ---- transport bar -------------------------------------------------------- */
+/* Sits directly under the video with normal spacing (no dead vertical gap). */
 .mut-stage .mut-stage-transport {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 2px 2px;
+  margin-top: 8px;
+  padding: 0 2px;
 }
 .mut-stage .mut-stage-transport button {
   background: #1d1d25;
@@ -121,6 +91,9 @@
   align-items: center;
   justify-content: center;
   line-height: 1;
+  /* Force monochrome (text-presentation) glyphs, not colour emoji. */
+  font-variant-emoji: text;
+  -webkit-font-feature-settings: normal;
 }
 .mut-stage .mut-stage-transport button:hover {
   border-color: var(--mut-cyan);
@@ -143,3 +116,17 @@
    the overlay itself uses ew/ns/nwse-resize via the body cursor while dragging
    (handled in JS render). The crosshair is the default over the canvas. */
 #mut_stage_root .mut-stage-overlay { cursor: crosshair; }
+
+/* ---- uniform MONOCHROME tool icons --------------------------------------- *
+   The bottom tool-row buttons (.mut-tool / #mutator-tools, owned by suite.py)
+   render outside .mut-stage, but this stylesheet is injected as a document-wide
+   <style> blob, so it reaches them. A few glyphs (e.g. the Speed / Colour
+   icons) default to full-colour emoji presentation while the rest render
+   monochrome; force text-presentation everywhere so the whole row matches the
+   monochrome transport. The trailing U+FE0E variation selectors in suite.py do
+   the same on capable engines; this is the CSS belt-and-braces. */
+.mut-tool button,
+#mutator-tools button {
+  font-variant-emoji: text;
+  -webkit-font-feature-settings: normal;
+}
