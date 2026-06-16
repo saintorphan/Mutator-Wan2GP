@@ -229,6 +229,9 @@
     S.edit.ui = S.edit.ui || {};
     S.edit.ui.selected = id;
     highlight();
+    // Selecting a clip re-bases the stage's within-clip frame at the current
+    // playhead (the plugin pushes the new clip payload separately on selection).
+    pushStageSeek();
   }
   // Cheap, no-rebuild .sel toggle (a pure click must NOT renderAll — that would
   // destroy the click target between events).
@@ -303,11 +306,44 @@
   }
 
   // ---- playhead / ruler -----------------------------------------------------
+  // Within-selected-clip second for the stage: the stage previews ONLY the
+  // selected clip, so seekToTimeline expects seconds measured from the clip's
+  // own start (subtract the selected clip's timeline start from the global
+  // playhead). Clamped at 0.
+  function withinSelectedSec() {
+    var s = ph() - startOf(selectedId());
+    return s > 0 ? s : 0;
+  }
+  // Push the playhead to the stage (scrub path: timeline -> video). Guarded so
+  // the timeline works standalone if the stage module isn't present.
+  function pushStageSeek() {
+    if (window.MutStage && window.MutStage.seekToTimeline) {
+      window.MutStage.seekToTimeline(withinSelectedSec());
+    }
+  }
   function setPlayhead(s) {
     S.edit.ui = S.edit.ui || {};
     S.edit.ui.playhead = Math.max(0, s);
     S.edit.playhead = S.edit.ui.playhead;
     placePlayhead();
+    pushStageSeek();                          // scrub drives the video
+  }
+  // Playback-driven update FROM the stage (video -> playhead). Move the playhead
+  // ONLY: no stage seek (would bounce back into a seek), no per-frame commit.
+  // `sec` is a within-selected-clip second; add the selected clip's start to get
+  // the global playhead.
+  function setExternalPlayhead(sec) {
+    S.edit.ui = S.edit.ui || {};
+    var g = startOf(selectedId()) + Math.max(0, sec || 0);
+    S.edit.ui.playhead = g;
+    S.edit.playhead = g;
+    placePlayhead();
+    updateReadout();
+  }
+  // Compact playhead-time readout (kept tolerant: no dedicated element required).
+  function updateReadout() {
+    var v = S.root && S.root.querySelector(".mut-phval");
+    if (v) v.textContent = (ph()).toFixed(2) + "s";
   }
   function wireRuler() {
     if (!S.ruler) return;
@@ -424,7 +460,11 @@
   }
 
   // Public surface kept minimal — internal state (S) is intentionally NOT exposed.
-  window.MutTimeline = { applyOp: applyOp, remount: tryMount, clickGr: clickGr };
+  // setExternalPlayhead is the stage's playback-driven playhead update (no seek).
+  window.MutTimeline = {
+    applyOp: applyOp, remount: tryMount, clickGr: clickGr,
+    setExternalPlayhead: setExternalPlayhead
+  };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
   else boot();
 })();

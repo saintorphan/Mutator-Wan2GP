@@ -1,25 +1,30 @@
 """Layout for the Mutator tab — components only, no event wiring.
 
-Mutator v0.3 is a per-clip single-track editor modelled on Reel2Reel: **the
-preview frame IS the editing stage**. Top to bottom:
+Mutator v0.4 is a per-clip single-track editor modelled on Reel2Reel: **the
+preview player IS the editing stage**, laid out PREVIEW | RESULT side by side at
+the top. Top to bottom:
 
-* **STAGE** — the crop canvas (``ui.crop``) rendered as the always-on primary
-  surface: the selected clip's source frame at the playhead, with a draggable
-  crop rectangle + aspect presets drawn directly on it. Scrubbing the timeline
-  changes the frame; dragging the rectangle sets the crop in source pixels.
+* **TOP ROW (side by side)**
+    * **STAGE** (left) — a real video-preview player (``ui.stage``): the selected
+      clip plays with custom transport controls, a draggable crop rectangle +
+      aspect presets drawn over the video, and playback synced bidirectionally to
+      the timeline playhead. Scrubbing the timeline seeks the video; playing the
+      video drives the timeline playhead. Dragging the rectangle sets the crop in
+      source pixels.
+    * **RESULT** (right) — a ``gr.Video`` playing the rendered selected segment +
+      info.
 * **TIMELINE** — the draggable single-track timeline (``ui.timeline``): one
   ordered track of Segments, click-to-select, drag-trim edges, playhead, splice.
 * **LOAD / STRUCTURE row** — load a clip (OS file browser, gallery selection, or
   a SendTo hand-off) + Splice / Rejoin.
 * **INSPECTOR** — one panel that loads the SELECTED clip's edits (speed, reverse,
   flip, resize, colour) and mutates only that segment; Undo / Redo.
-* **RESULT** — a ``gr.Video`` playing the rendered selected segment + info.
 * **SEND** — save in place / as copy, the native SendTo frame panel, "Send
   edited clip".
 
 :func:`build_ui` returns a flat ``{key: gr.Component}`` dict; ``plugin.py``'s
 ``_wire`` attaches every handler, so this module stays a pure view. The timeline
-+ crop mounts come from the widget factories (their bridge elem_ids live there);
++ stage mounts come from the widget factories (their bridge elem_ids live there);
 their dicts are spread into the returned dict. The banner is injected by
 ``plugin.create_ui``, not here.
 
@@ -32,7 +37,7 @@ from __future__ import annotations
 
 import gradio as gr
 
-from .crop import build_crop_widget
+from .stage import build_stage_widget
 from .timeline import build_timeline_widget
 
 # Aspect-ratio presets shared by the crop canvas and the resize tool.
@@ -48,28 +53,35 @@ TOOL_OUT_KEYS = [
 
 
 def build_ui() -> dict:
-    """Build the Mutator v0.3 tab body and return its flat component dict.
+    """Build the Mutator v0.4 tab body and return its flat component dict.
 
     The returned dict ``c`` exposes every key ``plugin.py`` wires. The timeline +
-    crop widget dicts are spread in, so ``c`` also carries
-    ``tl_mount/tl_to_py/tl_from_py`` and ``crop_mount/crop_to_py/crop_from_py``.
+    stage widget dicts are spread in, so ``c`` also carries
+    ``tl_mount/tl_to_py/tl_from_py`` and ``stage_mount/crop_to_py/stage_from_py``.
     """
     c: dict = {}
 
     # ======================================================================
-    #  STAGE — the crop canvas as the always-on primary surface
+    #  TOP ROW — STAGE (video preview player) | RESULT, side by side
     # ======================================================================
-    with gr.Column(elem_id="mutator-stage"):
-        gr.Markdown(
-            "**Stage** — drag the rectangle to crop · scrub the timeline below to "
-            "change the frame", elem_classes="mutator-stage-caption")
-        # build_crop_widget() spreads crop_mount (the iframe) + the two bridge
-        # pipes (mut_crop_to_py / mut_crop_from_py). No panel/toggle: it is the
-        # main editing surface now.
-        c.update(build_crop_widget())
+    with gr.Row(elem_id="mutator-top"):
+        # -- LEFT: the video-preview stage (transport + crop overlay) ------
+        with gr.Column(elem_id="mutator-stage"):
+            gr.Markdown(
+                "**Preview** — play / scrub the selected clip · drag the rectangle "
+                "to crop", elem_classes="mutator-stage-caption")
+            # build_stage_widget() spreads stage_mount (#mut_stage_root) + the
+            # crop pipe (mut_crop_to_py) + the clip injector (mut_stage_from_py).
+            c.update(build_stage_widget())
+
+        # -- RIGHT: the rendered result of the selected segment ------------
+        with gr.Column(elem_id="mutator-result"):
+            c["result_video"] = gr.Video(
+                label="Result (selected clip render)", interactive=False)
+            c["result_info"] = gr.Markdown("")
 
     # ======================================================================
-    #  TIMELINE — draggable single track
+    #  TIMELINE — draggable single track (full width)
     # ======================================================================
     with gr.Column(elem_id="mutator-timeline"):
         # tl_mount + the hidden bridge textboxes (mut_tl_root/to_py/from_py).
@@ -116,14 +128,6 @@ def build_ui() -> dict:
         with gr.Row():
             c["undo_btn"] = gr.Button("↶ Undo", size="sm", interactive=False)
             c["redo_btn"] = gr.Button("↷ Redo", size="sm", interactive=False)
-
-    # ======================================================================
-    #  RESULT — playback of the rendered selected segment
-    # ======================================================================
-    with gr.Column(elem_id="mutator-result"):
-        c["result_video"] = gr.Video(label="Result (selected clip render)",
-                                     interactive=False)
-        c["result_info"] = gr.Markdown("")
 
     # ======================================================================
     #  SEND

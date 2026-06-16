@@ -6,14 +6,14 @@ accent: ImageSuite gold, Reel2Reel green, Replicant purple, Mutator cyan/teal).
 The class ``.mutator-tabbtn`` is applied at runtime by the small JS tagger in
 ``plugin.create_ui`` (it matches the tab button whose text is the plugin name).
 
-v0.2 adds container styling for the three vertical zones — WORKSPACE
-(``#mutator-workspace``), RESULT (``#mutator-result``) and SEND
-(``#mutator-send``) — and the compact tool row that lives inside the workspace.
-This module deliberately holds NO timeline- or crop-internal styling: the
-draggable single-track timeline is scoped under ``.mut-tl`` in
-``assets/static/timeline.css`` (injected via the timeline mount's ``<style>``),
-and the crop canvas CSS is inline inside the ``crop.js`` iframe ``srcdoc``. Only
-the OUTER zone/tool-row shells live here.
+v0.4 lays the STAGE (the video-preview player) and the RESULT player SIDE BY
+SIDE in a top flex row (``#mutator-top`` → ``#mutator-stage`` | ``#mutator-result``),
+with the timeline, load row, inspector and SEND (``#mutator-send``) zone full
+width below. This module deliberately holds NO timeline- or stage-internal
+styling: the draggable single-track timeline is scoped under ``.mut-tl`` in
+``assets/static/timeline.css`` and the stage (video + crop overlay + transport)
+under ``.mut-stage`` in ``assets/static/stage.css`` (each injected via its mount's
+``<style>`` blob). Only the OUTER zone/row shells live here.
 
 Public surface (unchanged shape): a single module-level ``CSS`` string consumed
 by ``plugin.create_ui`` as ``gr.HTML(f"<style>{ui.styles.CSS}</style>")``.
@@ -51,12 +51,28 @@ button.mutator-tabbtn {
 #mutator-banner #mutator-gh:hover { text-decoration: underline; }
 
 /* ====================================================================== */
-/*  v0.2 — three vertical zones: WORKSPACE -> RESULT -> SEND               */
+/*  v0.4 — TOP ROW: STAGE (preview) | RESULT side by side, then SEND       */
 /* ====================================================================== */
 
-/* Shared card shell for every zone. Each zone is a labelled, outlined panel
-   so the Workspace / Result / Send split reads as three stacked stages. */
-#mutator-workspace,
+/* The top row lays the preview stage (left) and the result player (right)
+   side by side; they wrap on a narrow viewport. */
+#mutator-top {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 14px;
+    margin: 0 0 14px 0;
+}
+#mutator-top > #mutator-stage,
+#mutator-top > #mutator-result {
+    flex: 1 1 0;
+    min-width: 320px;
+}
+
+/* Shared card shell for the stage / result / send zones — labelled, outlined
+   panels so the split reads as distinct stages. */
+#mutator-stage,
 #mutator-result,
 #mutator-send {
     position: relative;
@@ -64,13 +80,12 @@ button.mutator-tabbtn {
     border-radius: 12px;
     background: #131319;
     padding: 14px 14px 16px;
-    margin: 0 0 14px 0;
 }
+#mutator-send { margin: 0 0 14px 0; }
 
-/* A faint top accent stripe + zone caption via the empty ::before. The caption
-   text is supplied per-zone below so the user can see the pipeline at a glance
+/* A zone caption via the empty ::before so the pipeline reads at a glance
    without the layout adding extra Markdown headers. */
-#mutator-workspace::before,
+#mutator-stage::before,
 #mutator-result::before,
 #mutator-send::before {
     display: block;
@@ -82,86 +97,39 @@ button.mutator-tabbtn {
     opacity: 0.85;
     margin: 0 0 10px 2px;
 }
-#mutator-workspace::before { content: "Workspace"; }
-#mutator-result::before    { content: "Result"; }
-#mutator-send::before      { content: "Send"; }
+#mutator-stage::before  { content: "Preview"; }
+#mutator-result::before { content: "Result"; }
+#mutator-send::before   { content: "Send"; }
 
-/* The source player + result player should fill their zone width and keep a
-   tidy, capped height so the timeline/tools stay on-screen. */
-#mutator-workspace video,
+/* The result player should fill its zone width and keep a tidy, capped height
+   so the timeline/tools stay on-screen (the stage caps its own video height in
+   stage.css). */
 #mutator-result video {
     border-radius: 8px;
     background: #000;
     max-height: 460px;
 }
 
-/* ---- compact tool row (inside the workspace) ------------------------- */
-/* The tool row is a single wrapping flex line: Splice / Rejoin / Crop /
-   Flip H / Flip V / Reverse / Speed / Resize sub-group / Colour sliders /
-   Undo / Redo. We tighten Gradio's default block gaps so it reads as one
-   compact control strip rather than a column stack. NO accordions. */
-#mutator-workspace .mutator-toolrow {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    gap: 8px 10px;
-    padding: 8px 4px;
-    margin: 8px 0;
-    border-top: 1px solid #23232b;
-    border-bottom: 1px solid #23232b;
-}
-#mutator-workspace .mutator-toolrow > * {
-    margin: 0 !important;
-    min-width: 0;
-}
+/* ---- LOAD / STRUCTURE row + INSPECTOR (full width, below the top row) - */
+/* The load row (upload / gallery / splice / rejoin) sits between the timeline
+   and the inspector; keep its buttons on one compact wrapping line. */
+#mutator-loadrow { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
 
-/* Buttons in the tool row: compact, accent-tinted, equal vertical rhythm. */
-#mutator-workspace .mutator-toolrow button {
-    min-height: 34px;
-    padding: 4px 12px;
-    white-space: nowrap;
+/* The inspector group holds the SELECTED clip's edits (speed / reverse / flip /
+   resize / colour / undo / redo). Give it the same card shell as the zones. */
+#mutator-inspector {
+    border: 1px solid #2a2a33;
+    border-radius: 12px;
+    background: #131319;
+    padding: 12px 14px 14px;
+    margin: 0 0 14px 0;
 }
-
-/* The Splice / Rejoin / Crop primary actions get a subtle cyan emphasis so the
-   structural edits stand apart from the per-clip adjusters. */
-#mutator-workspace .mutator-toolrow .mutator-structural button {
-    border-color: rgba(0, 217, 255, 0.55) !important;
-    box-shadow: 0 0 5px rgba(0, 217, 255, 0.25) !important;
-}
-
-/* Compact sliders / numbers in the tool row — narrow them so several fit on a
-   line and labels sit tight above the control. */
-#mutator-workspace .mutator-toolrow .mutator-num { width: 88px; flex: 0 0 auto; }
-#mutator-workspace .mutator-toolrow .mutator-slider { width: 150px; flex: 0 0 auto; }
-#mutator-workspace .mutator-toolrow label { font-size: 12px; }
-
-/* The colour sliders are visually grouped (six narrow sliders + reset). A thin
-   divider keeps them distinct from the geometry tools. */
-#mutator-workspace .mutator-colourgroup {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    gap: 6px 8px;
-    padding: 4px 8px;
-    border: 1px solid #23232b;
-    border-radius: 8px;
-    background: #15151b;
-}
-
-/* ---- crop canvas mount (toggled open inside the workspace) ----------- */
-/* The crop panel is a Gradio Column shown/hidden by the Crop button. When open
-   it gets a little breathing room + accent frame; the iframe itself carries its
-   own border from the build_crop_widget() inline style, so we only space it. */
-#mutator-workspace .mutator-cropwrap {
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px dashed rgba(0, 217, 255, 0.4);
-}
+#mutator-inspector .mutator-inspector-title { color: #00d9ff; }
 
 /* ---- timeline mount spacing ------------------------------------------ */
 /* The timeline itself is fully styled under .mut-tl in timeline.css; here we
-   only give the mount a top margin so it separates from the tool row. */
-#mutator-workspace #mut_tl_root { margin-top: 10px; }
+   only give the mount a top margin so it separates from the top row. */
+#mutator-timeline #mut_tl_root { margin-top: 4px; }
 
 /* ---- RESULT zone ----------------------------------------------------- */
 #mutator-result .mutator-result-info,

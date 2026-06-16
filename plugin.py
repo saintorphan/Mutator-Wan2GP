@@ -1,12 +1,14 @@
-"""Mutator — a Wan2GP plugin (v0.3: per-clip single-track editor).
+"""Mutator — a Wan2GP plugin (v0.4: per-clip single-track editor).
 
-One main-webui tab laid out top to bottom — STAGE (the always-on crop canvas:
-the selected clip's source frame at the playhead with a draggable crop rectangle
-drawn directly on it) → TIMELINE (a draggable single-track timeline of Segments)
-→ LOAD / STRUCTURE row (upload / gallery / splice / rejoin) → INSPECTOR (the
-SELECTED clip's edits) → RESULT (a ``gr.Video`` of the SELECTED segment's render
-+ info) → SEND (save in place / save as copy + an embedded SendTo frame panel +
-"Send edited clip"). The timeline is ONE ordered track of
+One main-webui tab with a side-by-side TOP ROW — STAGE (a real video-preview
+player: the selected clip plays with custom transport controls and a draggable
+crop rectangle drawn over the video, its playback synced bidirectionally to the
+timeline playhead) | RESULT (a ``gr.Video`` of the SELECTED segment's render +
+info) — then full width below: TIMELINE (a draggable single-track timeline of
+Segments) → LOAD / STRUCTURE row (upload / gallery / splice / rejoin) →
+INSPECTOR (the SELECTED clip's edits) → SEND (save in place / save as copy + an
+embedded SendTo frame panel + "Send edited clip"). The timeline is ONE ordered
+track of
 :class:`core.model.Segment`\\ s (it starts as one segment spanning the whole
 source). Selecting a segment loads ITS OWN edits into the tools + Result. Each
 segment carries independent trim / crop / resize / flip / speed / reverse /
@@ -20,12 +22,13 @@ per-process plugin instance (``self._track``), like the sibling plugins; the
 per-session ``state`` dict carries only the SendTo inbox hand-off. Single-user /
 local use.
 
-Two independent JS bridges wire the browser to Python: the timeline ships its JS
-via ``add_custom_js`` and round-trips edit-JSON through ``mut_tl_to_py`` (JS→Py,
-debounced) and ``mut_tl_from_py`` (Py→JS op-envelope, monotonic ``seq``); the
-crop canvas is a self-contained ``<iframe srcdoc>`` writing ``{seg_id,x,y,w,h}``
-source-pixel coords into ``mut_crop_to_py`` and receiving a source frame via the
-one-shot injector ``mut_crop_from_py``.
+Two parent-document JS modules wire the browser to Python, both shipped via
+``add_custom_js`` so they share ``window`` and sync directly
+(``window.MutStage`` <-> ``window.MutTimeline``): the timeline round-trips
+edit-JSON through ``mut_tl_to_py`` (JS→Py, debounced) and ``mut_tl_from_py``
+(Py→JS op-envelope, monotonic ``seq``); the stage writes ``{seg_id,x,y,w,h}``
+source-pixel crop coords into ``mut_crop_to_py`` and receives the selected clip
+(video URL + clip params) via the one-shot injector ``mut_stage_from_py``.
 
 NOTE: not an official plugin. Distribute via the plugin manager.
 """
@@ -45,7 +48,8 @@ from shared.utils.plugins import WAN2GPPlugin
 
 from .core import ffmpeg, inbox, paths, render
 from .core.model import COLOUR_NEUTRAL, Track
-from .ui import crop, logo, styles, suite
+from .ui import logo, styles, suite
+from .ui import stage as st
 from .ui import timeline as tw
 
 PLUGIN_ID = "Mutator"
@@ -61,13 +65,13 @@ class Mutator(WAN2GPPlugin):
     def __init__(self):
         super().__init__()
         self.name = PLUGIN_NAME
-        # Single source of truth for the version: plugin_info.json (fallback 0.2.0).
+        # Single source of truth for the version: plugin_info.json (fallback 0.4.0).
         try:
             self.version = json.loads(
                 (Path(__file__).parent / "plugin_info.json").read_text()
-            ).get("version", "0.3.0")
+            ).get("version", "0.4.0")
         except Exception:
-            self.version = "0.3.0"
+            self.version = "0.4.0"
         self.description = (
             "Per-clip single-track video editor: load a clip (gallery / upload / "
             "SendTo), build an ordered timeline of segments, then per-segment trim, "
@@ -206,10 +210,11 @@ class Mutator(WAN2GPPlugin):
         except Exception:
             traceback.print_exc()
 
-        # 2. Ship the timeline JS via add_custom_js (the ONLY path that runs).
-        #    crop.js ships INSIDE the crop iframe srcdoc, NOT here.
+        # 2. Ship the timeline + stage JS via add_custom_js (the ONLY path that
+        #    runs). Both are parent-document modules now, so they share `window`
+        #    and sync directly (window.MutStage <-> window.MutTimeline).
         try:
-            js = "\n".join(filter(None, [tw.timeline_js()]))
+            js = "\n".join(filter(None, [tw.timeline_js(), st.stage_js()]))
             if js:
                 self.add_custom_js(js)
         except Exception:
@@ -275,8 +280,9 @@ class Mutator(WAN2GPPlugin):
                 elem_classes="mutator-hidden")
             gr.HTML(logo.banner_html())
 
-            # The whole tab body (WORKSPACE / RESULT / SEND). build_ui spreads
-            # the timeline + crop widget dicts into c.
+            # The whole tab body (STAGE | RESULT top row, then timeline / load /
+            # inspector / SEND). build_ui spreads the timeline + stage widget
+            # dicts into c.
             c = suite.build_ui()
             self._c = c
 
@@ -285,7 +291,7 @@ class Mutator(WAN2GPPlugin):
             self.tl_to_py = c["tl_to_py"]
             self.tl_from_py = c["tl_from_py"]
             self.crop_to_py = c["crop_to_py"]
-            self.crop_from_py = c["crop_from_py"]
+            self.stage_from_py = c["stage_from_py"]
             self.upload_btn = c["upload_btn"]
             self.load_gallery_btn = c["load_gallery_btn"]
             self.result_video = c["result_video"]
@@ -320,7 +326,8 @@ class Mutator(WAN2GPPlugin):
         #  on_tab_select / the loaders / _on_tl_change all align 1:1 with it.  #
         #                                                                       #
         #  [ 0] tl_from_py        (op-envelope -> applyOp in the browser)        #
-        #  [ 1] crop_from_py      (STAGE frame injector — the still on the stage)#
+        #  [ 1] stage_from_py     (STAGE clip injector — loadClip(payload) on the #
+        #                          video preview player)                          #
         #  [ 2] result_video      (selected segment render path)                #
         #  [ 3] result_info       (info markdown)                               #
         #  [ 4..15] *TOOL_OUTS (12): rs_w, rs_h, rs_lock, rs_aspect, speed,      #
@@ -337,28 +344,36 @@ class Mutator(WAN2GPPlugin):
 
     def _refresh_outs(self) -> list:
         """LOAD_OUTS — the 21-wide full-refresh output contract (see create_ui)."""
-        return ([self.tl_from_py, self.crop_from_py, self.result_video,
+        return ([self.tl_from_py, self.stage_from_py, self.result_video,
                  self.result_info]
                 + list(self._tool_outs)
                 + [self.undo_btn, self.redo_btn,
                    self.save_inplace_btn, self.save_copy_btn, self.status_md])
 
     # -- full refresh (LOAD_OUTS-shaped, 21 wide) ---------------------------
-    def _stage_frame_update(self):
-        """The crop_from_py (STAGE) update for the selected segment: the source
-        frame at the current playhead, pushed onto the always-on crop canvas via
-        the one-shot injector. Returns ``gr.update()`` (no change) when nothing is
-        selected or the extract fails — never raises."""
+    def _stage_clip_update(self):
+        """The stage_from_py (STAGE) update for the selected segment: the SELECTED
+        clip (its source VIDEO url + clip params) pushed onto the video-preview
+        player via the one-shot ``loadClip`` injector. The stage plays/scrubs the
+        clip itself and syncs to the timeline playhead — no still-frame extraction.
+        Returns ``gr.update()`` (no change) when nothing is selected — never
+        raises."""
         sel = self._track.selected()
         if sel is None:
             return gr.update()
         try:
-            at_src = self._playhead_src_sec(sel)
-            uri = render.extract_frame(sel, at_src)
-            if not uri:
-                return gr.update()
-            html = crop.crop_bridge_html(uri, sel.id, sel.src_w, sel.src_h,
-                                         nonce=str(time.time()))
+            payload = {
+                "url": tw.file_url(sel.source),
+                "seg_id": sel.id,
+                "in": float(sel.in_),
+                "out": float(sel.out),
+                "speed": float(sel.speed_f),
+                "reverse": bool(sel.reverse),
+                "src_w": int(sel.src_w),
+                "src_h": int(sel.src_h),
+                "crop": sel.crop,
+            }
+            html = st.stage_clip_html(payload, nonce=str(time.time()))
             return gr.update(value=html)
         except Exception:
             traceback.print_exc()
@@ -366,10 +381,10 @@ class Mutator(WAN2GPPlugin):
 
     def _refresh_full(self, status: str = "") -> list:
         """A LOAD_OUTS-shaped (21) full refresh from the current Track state:
-        timeline envelope, STAGE frame, RESULT render + info, the 12 inspector
-        updates, undo/redo + save interactivity, and the status markdown. Safe
-        neutral updates when no clip is selected (no stage change, empty result,
-        disabled saves)."""
+        timeline envelope, STAGE clip injector, RESULT render + info, the 12
+        inspector updates, undo/redo + save interactivity, and the status markdown.
+        Safe neutral updates when no clip is selected (no stage change, empty
+        result, disabled saves)."""
         seg = self._track.selected()
         env = self._env_after()
         if seg is None:
@@ -379,7 +394,7 @@ class Mutator(WAN2GPPlugin):
                     gr.update(interactive=self._track.can_undo()),
                     gr.update(interactive=self._track.can_redo()),
                     si, sc, status]
-        stage = self._stage_frame_update()
+        stage = self._stage_clip_update()
         rp = self._render_selected()
         si, sc = self._save_interactivity()
         return [env, stage, rp, self._result_info(seg),
@@ -671,8 +686,9 @@ class Mutator(WAN2GPPlugin):
         self.tl_from_py.change(fn=None, inputs=[self.tl_from_py], outputs=[],
                                js=tw.APPLY_OP_JS, show_progress="hidden")
         # JS -> Py: full edit JSON on debounced change. Selecting a clip OR
-        # scrubbing the playhead lands here; the return includes the STAGE frame
-        # (LOAD_OUTS index 1) so the still tracks the playhead.
+        # scrubbing the playhead lands here; the return includes the STAGE clip
+        # injector (LOAD_OUTS index 1) so selecting a clip (re)loads it onto the
+        # video preview player (in-browser scrub/playback keeps it in sync after).
         self.tl_to_py.change(
             self._on_tl_change, inputs=[self.tl_to_py],
             outputs=LOAD_OUTS, show_progress="hidden")
@@ -747,8 +763,8 @@ class Mutator(WAN2GPPlugin):
         """JS -> Py: a debounced full edit-JSON arrived. Apply onto the track,
         fork undo ONLY when the pixel content changed (a pure selection/playhead
         change must not), then return a full LOAD_OUTS refresh — which includes
-        the STAGE frame at index 1, so selecting a clip or scrubbing the playhead
-        updates the still on the stage."""
+        the STAGE clip injector at index 1, so selecting a clip (re)loads it onto
+        the video preview player (the browser keeps the playhead in sync after)."""
         if payload:
             old_doc = self._track._document()
             try:
@@ -769,8 +785,8 @@ class Mutator(WAN2GPPlugin):
     def _on_crop(self, payload: str):
         """Crop JS -> Py: {seg_id,x,y,w,h} (source px). Apply to that segment
         (set_edit rounds w/h even, clamps to source), re-render, and return a full
-        LOAD_OUTS refresh. The stage re-push reloads the same source frame (the
-        crop rect the user drew stays drawn on the canvas)."""
+        LOAD_OUTS refresh. The stage re-push reloads the same clip with the new
+        crop rect (which the user already drew on the overlay)."""
         if not payload:
             return self._refresh_full()
         try:
@@ -1091,8 +1107,8 @@ class Mutator(WAN2GPPlugin):
         """Drain the SendTo inbox on every tab entry. Ingest the most-recent
         queued path — probing it, recording its source-duration ceiling, then
         loading (fresh track) or appending (extend an existing track), and pushing
-        the new clip's frame onto the STAGE. Returns a LOAD_OUTS-shaped list (1:1
-        with self.on_tab_outputs); a no-op refresh when nothing queued."""
+        the new clip onto the STAGE preview player. Returns a LOAD_OUTS-shaped list
+        (1:1 with self.on_tab_outputs); a no-op refresh when nothing queued."""
         try:
             items = inbox.drain(state)
             if items:

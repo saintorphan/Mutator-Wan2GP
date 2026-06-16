@@ -1,0 +1,145 @@
+/* Mutator v0.4 — STAGE (real video-preview player + crop overlay). Every rule
+   scoped under .mut-stage / #mut_stage_root so it never leaks into the host
+   Gradio UI. Injected as a <style> blob by ui/stage.py stage_css() inside the
+   mount gr.HTML. Cyan (#00d9ff) accent on charcoal. Author: saintorphan. */
+
+.mut-stage {
+  --mut-cyan: #00d9ff;
+  --mut-cyan-dk: #0892ad;
+  --mut-bg: #15161a;
+  --mut-edge: #2a2a33;
+  color: #e9e6df;
+  font-size: 13px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* The display area: the video + the crop overlay canvas stacked exactly. */
+.mut-stage .mut-stage-disp {
+  position: relative;
+  width: 100%;
+  background: #000;
+  border: 1px solid var(--mut-edge);
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+}
+
+/* The video: object-fit contain so the whole frame shows; capped height so the
+   timeline/result stay on-screen. Its DISPLAYED rect is what the overlay maps. */
+.mut-stage .mut-stagevid {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+  background: #000;
+}
+
+/* The crop overlay canvas — stretched over the displayed video rect. Its
+   backing store is sized to SOURCE px (videoWidth/Height) so crop coords need
+   no transform; CSS stretches it over the same rect the video occupies. */
+.mut-stage .mut-stage-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none;
+  pointer-events: auto;
+}
+
+/* Empty-state placeholder shown before the first clip loads. */
+.mut-stage .mut-stage-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 18px;
+  color: #8b8f99;
+  font-size: 13px;
+  line-height: 1.6;
+  pointer-events: none;
+}
+
+/* ---- aspect-preset bar (crop ratios) -------------------------------------- */
+.mut-stage .mut-stage-aspbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 2px 2px;
+}
+.mut-stage .mut-stage-asplbl {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: #8a8a9a;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-right: 2px;
+}
+.mut-stage .mut-stage-aspbar button {
+  background: #2a2a35;
+  border: 1px solid #3a3a48;
+  color: #cfcfe0;
+  border-radius: 6px;
+  padding: 4px 9px;
+  font-size: 11px;
+  cursor: pointer;
+  line-height: 1.1;
+}
+.mut-stage .mut-stage-aspbar button:hover { border-color: var(--mut-cyan-dk); }
+.mut-stage .mut-stage-aspbar button.on {
+  background: var(--mut-cyan);
+  border-color: var(--mut-cyan);
+  color: #06121a;
+  font-weight: 700;
+}
+.mut-stage .mut-stage-reset { margin-left: auto; }
+
+/* ---- transport bar -------------------------------------------------------- */
+.mut-stage .mut-stage-transport {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 2px 2px;
+}
+.mut-stage .mut-stage-transport button {
+  background: #1d1d25;
+  border: 1px solid #3a3a48;
+  color: var(--mut-cyan);
+  border-radius: 6px;
+  min-width: 38px;
+  height: 32px;
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.mut-stage .mut-stage-transport button:hover {
+  border-color: var(--mut-cyan);
+  box-shadow: 0 0 6px rgba(0, 217, 255, 0.35);
+}
+.mut-stage .mut-stage-transport button:active { background: #11313a; }
+.mut-stage .mut-stage-transport button[data-act="play"] {
+  border-color: var(--mut-cyan);
+  background: #11313a;
+}
+.mut-stage .mut-stage-readout {
+  margin-left: auto;
+  font-size: 12px;
+  color: #9aa;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* Cursor hints for the crop handles via overlay regions are drawn on-canvas;
+   the overlay itself uses ew/ns/nwse-resize via the body cursor while dragging
+   (handled in JS render). The crosshair is the default over the canvas. */
+#mut_stage_root .mut-stage-overlay { cursor: crosshair; }
