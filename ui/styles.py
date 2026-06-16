@@ -26,6 +26,11 @@ ACCENT = "#00d9ff"
 
 CSS = """
 #mutator-root { position: relative; }
+/* The injected <style> blob + the JS tab-tagger ride in hidden gr.HTML blocks
+   ABOVE the banner; without this they render as empty boxes and push the logo
+   down (that's the phantom padding over the logo). Collapse them entirely. */
+.mutator-hidden { display: none !important; }
+#mutator-root > .mutator-hidden { display: none !important; height: 0 !important; margin: 0 !important; padding: 0 !important; }
 button.mutator-tabbtn {
     border: 2px solid #00d9ff !important;
     border-radius: 8px !important;
@@ -36,8 +41,10 @@ button.mutator-tabbtn {
    the top of the tab, GitHub link far right, both bottom-aligned. */
 #mutator-banner {
     display: flex; align-items: flex-end; justify-content: space-between;
-    gap: 12px; margin: 4px 0 10px 2px;
+    gap: 12px; margin: 0 0 10px 2px;
 }
+/* Kill Gradio's default top padding on the tab body so the logo sits flush. */
+#mutator-root { padding-top: 0 !important; margin-top: 0 !important; }
 #mutator-banner img {
     height: 104px; width: auto; max-width: 520px;
     object-fit: contain; display: block;
