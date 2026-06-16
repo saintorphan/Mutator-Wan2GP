@@ -56,6 +56,7 @@
     // crop rect in SOURCE (bitmap) px — exactly what ffmpeg wants.
     crop: { x: 0, y: 0, w: 0, h: 0 },
     aspect: 0,
+    cropMode: false,                       // crop tool toggle (overlay hidden when off)
     hasClip: false,
 
     dragging: null, dragStart: null,
@@ -191,7 +192,7 @@
     var dx = S.ctx, c = S.crop, W = S.srcW, H = S.srcH;
     if (!dx) return;
     dx.clearRect(0, 0, W, H);
-    if (!S.hasClip) return;
+    if (!S.hasClip || !S.cropMode) return;   // overlay hidden unless crop mode
     // dim outside the crop rect
     dx.save();
     dx.fillStyle = "rgba(0,0,0,.45)";
@@ -232,15 +233,37 @@
     dx.restore();
   }
   function render() {
+    // The overlay canvas is interactive (and visible) ONLY in crop mode; when
+    // off it's transparent + pointer-events:none so the video plays clean.
+    if (S.canvas) {
+      S.canvas.style.pointerEvents = S.cropMode ? "auto" : "none";
+      S.canvas.style.display = S.cropMode ? "" : "none";
+    }
     drawCropOverlay();
     syncAspUI();
+  }
+
+  /* ----------------------------------------------------------------------- *
+   * Crop-mode toggle (drives the crop_btn in the tool row, JS-side)         *
+   * ----------------------------------------------------------------------- */
+  function setCropMode(b) {
+    S.cropMode = !!b;
+    render();
+    return S.cropMode;
+  }
+  function toggleCropMode() {
+    return setCropMode(!S.cropMode);
+  }
+  // Public setAspect(name): map a preset name through ASPMAP, then re-clamp.
+  function setAspectByName(name) {
+    setAspect(ASPMAP[name] || 0);
   }
 
   /* ----------------------------------------------------------------------- *
    * Crop drag interaction (window-bound so drags can leave the canvas)      *
    * ----------------------------------------------------------------------- */
   function down(e) {
-    if (!S.hasClip) return;
+    if (!S.hasClip || !S.cropMode) return;   // no crop drag unless crop mode on
     if (e.button !== undefined && e.button !== 0) return;
     var p = pos(e);
     var h = hitHandle(p);
@@ -555,6 +578,7 @@
     S.mounted = true;
 
     wire();
+    render();    // set the initial canvas visibility (hidden until crop mode)
     if (S.url) { loadClip({
       url: S.url, seg_id: S.segId, "in": S.in_, out: S.out, speed: S.speed,
       reverse: S.reverse, src_w: S.srcW, src_h: S.srcH,
@@ -648,12 +672,16 @@
   }
 
   // Public surface — the timeline calls seekToTimeline; the plugin calls loadClip.
+  // The tool row's crop button drives toggleCropMode/setCropMode/setAspect (JS-only).
   window.MutStage = {
     loadClip: loadClip,
     seekToTimeline: seekToTimeline,
     play: play,
     pause: pause,
     toggle: toggle,
+    toggleCropMode: toggleCropMode,
+    setCropMode: setCropMode,
+    setAspect: setAspectByName,
     remount: tryMount
   };
 

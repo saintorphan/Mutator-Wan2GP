@@ -1,24 +1,24 @@
 """Layout for the Mutator tab — components only, no event wiring.
 
-Mutator v0.4 is a per-clip single-track editor modelled on Reel2Reel: **the
+Mutator v0.5 is a per-clip single-track editor modelled on Reel2Reel: **the
 preview player IS the editing stage**, laid out PREVIEW | RESULT side by side at
 the top. Top to bottom:
 
 * **TOP ROW (side by side)**
     * **STAGE** (left) — a real video-preview player (``ui.stage``): the selected
       clip plays with custom transport controls, a draggable crop rectangle +
-      aspect presets drawn over the video, and playback synced bidirectionally to
-      the timeline playhead. Scrubbing the timeline seeks the video; playing the
-      video drives the timeline playhead. Dragging the rectangle sets the crop in
-      source pixels.
+      aspect presets drawn over the video (visible only in crop mode), and
+      playback synced bidirectionally to the timeline playhead. Directly UNDER
+      the preview live the **info line** (speed · W×H) and the uniform **TOOL
+      ROW** of square icon buttons (crop / resize / speed / flip-h / flip-v /
+      colour / splice / rejoin / undo / redo) plus their popups (resize, speed),
+      the crop-aspect dropdown and the right-side colour drawer.
     * **RESULT** (right) — a ``gr.Video`` playing the rendered selected segment +
       info.
 * **TIMELINE** — the draggable single-track timeline (``ui.timeline``): one
   ordered track of Segments, click-to-select, drag-trim edges, playhead, splice.
-* **LOAD / STRUCTURE row** — load a clip (OS file browser, gallery selection, or
-  a SendTo hand-off) + Splice / Rejoin.
-* **INSPECTOR** — one panel that loads the SELECTED clip's edits (speed, reverse,
-  flip, resize, colour) and mutates only that segment; Undo / Redo.
+* **LOAD row** — load a clip (OS file browser, gallery selection, or a SendTo
+  hand-off).
 * **SEND** — save in place / as copy, the native SendTo frame panel, "Send
   edited clip".
 
@@ -53,7 +53,7 @@ TOOL_OUT_KEYS = [
 
 
 def build_ui() -> dict:
-    """Build the Mutator v0.4 tab body and return its flat component dict.
+    """Build the Mutator v0.5 tab body and return its flat component dict.
 
     The returned dict ``c`` exposes every key ``plugin.py`` wires. The timeline +
     stage widget dicts are spread in, so ``c`` also carries
@@ -62,17 +62,92 @@ def build_ui() -> dict:
     c: dict = {}
 
     # ======================================================================
-    #  TOP ROW — STAGE (video preview player) | RESULT, side by side
+    #  TOP ROW — STAGE (video preview player + tool row) | RESULT
     # ======================================================================
     with gr.Row(elem_id="mutator-top"):
         # -- LEFT: the video-preview stage (transport + crop overlay) ------
         with gr.Column(elem_id="mutator-stage"):
             gr.Markdown(
-                "**Preview** — play / scrub the selected clip · drag the rectangle "
-                "to crop", elem_classes="mutator-stage-caption")
+                "**Preview** — play / scrub the selected clip · use the tools "
+                "below", elem_classes="mutator-stage-caption")
             # build_stage_widget() spreads stage_mount (#mut_stage_root) + the
             # crop pipe (mut_crop_to_py) + the clip injector (mut_stage_from_py).
             c.update(build_stage_widget())
+
+            # ---- INFO LINE (speed · W×H of the selected clip) -------------
+            c["stage_info"] = gr.Markdown("", elem_id="mutator-stage-info")
+
+            # ---- TOOL ROW — uniform square icon buttons (same size as the
+            #      transport). Every button carries elem_classes=["mut-tool"]
+            #      so the CSS sizes them 40×36 uniformly. ----------------------
+            with gr.Row(elem_id="mutator-tools"):
+                c["crop_btn"] = gr.Button(
+                    "⛶", elem_classes=["mut-tool"], size="sm")
+                c["resize_btn"] = gr.Button(
+                    "⤢", elem_classes=["mut-tool"], size="sm")
+                c["speed_btn"] = gr.Button(
+                    "⏩", elem_classes=["mut-tool"], size="sm")
+                # Clear mirror glyphs: ◧ horizontal-flip, ⬓ vertical-flip.
+                c["flip_h_btn"] = gr.Button(
+                    "◧", elem_classes=["mut-tool"], size="sm")
+                c["flip_v_btn"] = gr.Button(
+                    "⬓", elem_classes=["mut-tool"], size="sm")
+                c["color_btn"] = gr.Button(
+                    "🎨", elem_classes=["mut-tool"], size="sm")
+                c["splice_btn"] = gr.Button(
+                    "✂", elem_classes=["mut-tool"], size="sm")
+                c["rejoin_btn"] = gr.Button(
+                    "⛓", elem_classes=["mut-tool"], size="sm")
+                c["undo_btn"] = gr.Button(
+                    "↶", elem_classes=["mut-tool"], size="sm",
+                    interactive=False)
+                c["redo_btn"] = gr.Button(
+                    "↷", elem_classes=["mut-tool"], size="sm",
+                    interactive=False)
+
+            # ---- CROP aspect dropdown (hidden until crop mode is toggled) --
+            c["crop_aspect"] = gr.Dropdown(
+                ASPECT_CHOICES, value="free", label="Crop aspect",
+                elem_id="mutator-crop-aspect", visible=False)
+
+            # ---- RESIZE popup (toggled by resize_btn) ---------------------
+            with gr.Group(elem_id="mutator-resize-pop", visible=False) \
+                    as resize_pop:
+                gr.Markdown("**Resize**", elem_classes="mutator-pop-title")
+                with gr.Row():
+                    c["rs_aspect"] = gr.Dropdown(
+                        ASPECT_CHOICES, value="free", label="Aspect")
+                with gr.Row():
+                    c["rs_w"] = gr.Number(
+                        label="W", value=None, precision=0, minimum=0)
+                    c["rs_h"] = gr.Number(
+                        label="H", value=None, precision=0, minimum=0)
+                    c["rs_lock"] = gr.Checkbox(label="Lock", value=True)
+                c["apply_resize_btn"] = gr.Button(
+                    "Apply", size="sm", variant="primary")
+            c["resize_pop"] = resize_pop
+
+            # ---- SPEED popup (toggled by speed_btn) -----------------------
+            with gr.Group(elem_id="mutator-speed-pop", visible=False) \
+                    as speed_pop:
+                gr.Markdown("**Speed**", elem_classes="mutator-pop-title")
+                c["speed"] = gr.Slider(
+                    0.1, 8.0, value=1.0, step=0.05, label="Speed ×")
+                c["reverse_chk"] = gr.Checkbox(label="Reverse", value=False)
+            c["speed_pop"] = speed_pop
+
+            # ---- COLOUR drawer (right-side; toggled by color_btn) ---------
+            with gr.Group(elem_id="mutator-color-drawer", visible=False) \
+                    as color_drawer:
+                gr.Markdown("**Colour**", elem_classes="mutator-pop-title")
+                c["col_bri"] = gr.Slider(50, 150, value=100, step=1, label="Bright")
+                c["col_con"] = gr.Slider(50, 150, value=100, step=1, label="Contrast")
+                c["col_sat"] = gr.Slider(0, 200, value=100, step=1, label="Sat")
+                c["col_hue"] = gr.Slider(-180, 180, value=0, step=1, label="Hue")
+                c["col_warm"] = gr.Slider(-100, 100, value=0, step=1, label="Warmth")
+                c["col_gamma"] = gr.Slider(0.5, 2.0, value=1.0, step=0.01, label="Gamma")
+                c["col_reset_btn"] = gr.Button("Reset colour", size="sm")
+            c["color_drawer"] = color_drawer
 
         # -- RIGHT: the rendered result of the selected segment ------------
         with gr.Column(elem_id="mutator-result"):
@@ -88,7 +163,7 @@ def build_ui() -> dict:
         c.update(build_timeline_widget())
 
     # ======================================================================
-    #  LOAD / STRUCTURE row
+    #  LOAD row
     # ======================================================================
     with gr.Row(elem_id="mutator-loadrow"):
         c["upload_btn"] = gr.UploadButton(
@@ -96,38 +171,6 @@ def build_ui() -> dict:
             size="sm", variant="primary")
         c["load_gallery_btn"] = gr.Button(
             "⟳ From gallery selection", size="sm")
-        c["splice_btn"] = gr.Button("✂ Splice", size="sm")
-        c["rejoin_btn"] = gr.Button("⛓ Rejoin", size="sm")
-
-    # ======================================================================
-    #  INSPECTOR — edits for the SELECTED clip (greyed until one is loaded)
-    # ======================================================================
-    with gr.Group(elem_id="mutator-inspector"):
-        gr.Markdown("**Selected clip**", elem_classes="mutator-inspector-title")
-        with gr.Row():
-            c["speed"] = gr.Slider(0.1, 8.0, value=1.0, step=0.05, label="Speed ×")
-            c["reverse_chk"] = gr.Checkbox(label="Reverse", value=False)
-            c["flip_h_btn"] = gr.Button("⇋ Flip H", size="sm")
-            c["flip_v_btn"] = gr.Button("⇵ Flip V", size="sm")
-        with gr.Row():
-            c["rs_w"] = gr.Number(label="W", value=None, precision=0, minimum=0)
-            c["rs_h"] = gr.Number(label="H", value=None, precision=0, minimum=0)
-            c["rs_lock"] = gr.Checkbox(label="Lock", value=True)
-            c["rs_aspect"] = gr.Radio(ASPECT_CHOICES, value="free", label="Aspect")
-            c["resize_btn"] = gr.Button("Apply resize", size="sm")
-        with gr.Accordion("🎨 Colour", open=False, elem_id="mutator-colour"):
-            with gr.Row():
-                c["col_bri"] = gr.Slider(50, 150, value=100, step=1, label="Bright")
-                c["col_con"] = gr.Slider(50, 150, value=100, step=1, label="Contrast")
-                c["col_sat"] = gr.Slider(0, 200, value=100, step=1, label="Sat")
-            with gr.Row():
-                c["col_hue"] = gr.Slider(-180, 180, value=0, step=1, label="Hue")
-                c["col_warm"] = gr.Slider(-100, 100, value=0, step=1, label="Warmth")
-                c["col_gamma"] = gr.Slider(0.5, 2.0, value=1.0, step=0.01, label="Gamma")
-            c["col_reset_btn"] = gr.Button("Reset colour", size="sm")
-        with gr.Row():
-            c["undo_btn"] = gr.Button("↶ Undo", size="sm", interactive=False)
-            c["redo_btn"] = gr.Button("↷ Redo", size="sm", interactive=False)
 
     # ======================================================================
     #  SEND

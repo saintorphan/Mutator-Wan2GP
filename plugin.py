@@ -69,9 +69,9 @@ class Mutator(WAN2GPPlugin):
         try:
             self.version = json.loads(
                 (Path(__file__).parent / "plugin_info.json").read_text()
-            ).get("version", "0.4.0")
+            ).get("version", "0.5.0")
         except Exception:
-            self.version = "0.4.0"
+            self.version = "0.5.0"
         self.description = (
             "Per-clip single-track video editor: load a clip (gallery / upload / "
             "SendTo), build an ordered timeline of segments, then per-segment trim, "
@@ -304,8 +304,18 @@ class Mutator(WAN2GPPlugin):
             self.send_clip_btn = c["send_clip_btn"]
             self.undo_btn = c["undo_btn"]
             self.redo_btn = c["redo_btn"]
+            self.stage_info = c["stage_info"]
             # The selection-driven tool row, 1:1 with suite.TOOL_OUT_KEYS.
             self._tool_outs = [c[k] for k in suite.TOOL_OUT_KEYS]
+            # The toggle-able tool surfaces (popups + the right-side colour
+            # drawer) + their per-instance open flags (§H). The crop tool is
+            # pure-JS (no server handle needed beyond the dropdown).
+            self.resize_pop = c["resize_pop"]
+            self.speed_pop = c["speed_pop"]
+            self.color_drawer = c["color_drawer"]
+            self._resize_open = False
+            self._speed_open = False
+            self._color_open = False
 
             # -- embedded send panels (SendTo wired in NATIVELY — always
             #    render; no external sendto package needed) ------------------
@@ -321,7 +331,7 @@ class Mutator(WAN2GPPlugin):
             self._wire(c)
 
         # ---------------------------------------------------------------- #
-        #  LOAD_OUTS — the v0.3 refresh contract (21 outputs). EVERY handler   #
+        #  LOAD_OUTS — the v0.5 refresh contract (22 outputs). EVERY handler   #
         #  that targets a full refresh must return values in this exact order; #
         #  on_tab_select / the loaders / _on_tl_change all align 1:1 with it.  #
         #                                                                       #
@@ -338,19 +348,21 @@ class Mutator(WAN2GPPlugin):
         #  [18] save_inplace_btn  (interactive update)                          #
         #  [19] save_copy_btn     (interactive update)                          #
         #  [20] status_md         (status markdown)                             #
+        #  [21] stage_info        (preview info line — speed · W×H markdown)     #
         # ---------------------------------------------------------------- #
         self.on_tab_outputs = self._refresh_outs()
         return c
 
     def _refresh_outs(self) -> list:
-        """LOAD_OUTS — the 21-wide full-refresh output contract (see create_ui)."""
+        """LOAD_OUTS — the 22-wide full-refresh output contract (see create_ui)."""
         return ([self.tl_from_py, self.stage_from_py, self.result_video,
                  self.result_info]
                 + list(self._tool_outs)
                 + [self.undo_btn, self.redo_btn,
-                   self.save_inplace_btn, self.save_copy_btn, self.status_md])
+                   self.save_inplace_btn, self.save_copy_btn, self.status_md,
+                   self.stage_info])
 
-    # -- full refresh (LOAD_OUTS-shaped, 21 wide) ---------------------------
+    # -- full refresh (LOAD_OUTS-shaped, 22 wide) ---------------------------
     def _stage_clip_update(self):
         """The stage_from_py (STAGE) update for the selected segment: the SELECTED
         clip (its source VIDEO url + clip params) pushed onto the video-preview
@@ -380,11 +392,11 @@ class Mutator(WAN2GPPlugin):
             return gr.update()
 
     def _refresh_full(self, status: str = "") -> list:
-        """A LOAD_OUTS-shaped (21) full refresh from the current Track state:
+        """A LOAD_OUTS-shaped (22) full refresh from the current Track state:
         timeline envelope, STAGE clip injector, RESULT render + info, the 12
-        inspector updates, undo/redo + save interactivity, and the status markdown.
-        Safe neutral updates when no clip is selected (no stage change, empty
-        result, disabled saves)."""
+        inspector updates, undo/redo + save interactivity, the status markdown,
+        and the preview info line (speed · W×H). Safe neutral updates when no clip
+        is selected (no stage change, empty result, disabled saves, blank info)."""
         seg = self._track.selected()
         env = self._env_after()
         if seg is None:
@@ -393,7 +405,7 @@ class Mutator(WAN2GPPlugin):
                     *self._selection_values(None),
                     gr.update(interactive=self._track.can_undo()),
                     gr.update(interactive=self._track.can_redo()),
-                    si, sc, status]
+                    si, sc, status, gr.update(value=self._fmt_clip_info(None))]
         stage = self._stage_clip_update()
         rp = self._render_selected()
         si, sc = self._save_interactivity()
@@ -401,7 +413,7 @@ class Mutator(WAN2GPPlugin):
                 *self._selection_values(seg),
                 gr.update(interactive=self._track.can_undo()),
                 gr.update(interactive=self._track.can_redo()),
-                si, sc, status]
+                si, sc, status, gr.update(value=self._fmt_clip_info(seg))]
 
     # -- loading (upload / gallery / ingest) --------------------------------
     def _ingest(self, path, is_upload) -> list:
@@ -637,6 +649,22 @@ class Mutator(WAN2GPPlugin):
         return (f"**{seg.label or 'Clip'}**  ·  {w}×{h}  ·  "
                 f"**{seg.dur:.2f}s** ({seg.src_len:.2f}s src)  ·  {audio}{edits}")
 
+    def _fmt_clip_info(self, seg) -> str:
+        """The compact preview info line under the stage: the SELECTED clip's
+        speed + EFFECTIVE output W×H — e.g. ``**1.0× · 512×512**``. The W×H is the
+        resize dims if set, else the crop w×h if set, else the source W×H. Blank
+        when nothing is selected."""
+        if seg is None:
+            return ""
+        w = seg.src_w or 0
+        h = seg.src_h or 0
+        if seg.crop:
+            w, h = seg.crop["w"], seg.crop["h"]
+        if seg.resize:
+            w = seg.resize.get("w") or w
+            h = seg.resize.get("h") or h
+        return f"**{seg.speed_f:g}× · {w}×{h}**"
+
     def _selection_values(self, seg) -> list:
         """Tool-row updates 1:1 with suite.TOOL_OUT_KEYS (rs_w, rs_h, rs_lock,
         rs_aspect, speed, reverse_chk, col_bri..col_gamma). Neutral defaults when
@@ -677,7 +705,7 @@ class Mutator(WAN2GPPlugin):
     # -- wiring (§7.5–7.7) --------------------------------------------------
     def _wire(self, c):
         # Every selection/edit-affecting handler returns a uniform LOAD_OUTS
-        # (21-wide) refresh — no per-handler arity drift. The full contract +
+        # (22-wide) refresh — no per-handler arity drift. The full contract +
         # order is documented in create_ui.
         LOAD_OUTS = self._refresh_outs()
 
@@ -716,16 +744,41 @@ class Mutator(WAN2GPPlugin):
                 lambda state: self._on_load_gallery(state, None),
                 inputs=[self.state], outputs=LOAD_OUTS)
 
-        # ---- per-clip tools (§7.6) ----------------------------------------
-        c["flip_h_btn"].click(self._toggle_flip_h, outputs=LOAD_OUTS)
-        c["flip_v_btn"].click(self._toggle_flip_v, outputs=LOAD_OUTS)
-        c["reverse_chk"].change(self._set_reverse, inputs=[c["reverse_chk"]],
-                                outputs=LOAD_OUTS)
-        c["speed"].change(self._set_speed, inputs=[c["speed"]], outputs=LOAD_OUTS)
-        c["resize_btn"].click(
+        # ---- tool row: crop (pure JS toggle) ------------------------------
+        # Crop is a JS-only toggle on the stage overlay: flip MutStage.cropMode
+        # and show/hide the aspect dropdown. fn=None → no server round-trip, no
+        # outputs (the crop rect still round-trips via mut_crop_to_py as before).
+        c["crop_btn"].click(
+            fn=None,
+            js="() => { try { var on = window.MutStage && "
+               "window.MutStage.toggleCropMode(); var d="
+               "document.getElementById('mutator-crop-aspect'); if(d) "
+               "d.style.display = on ? '' : 'none'; } catch(e){} }")
+        c["crop_aspect"].change(
+            fn=None,
+            js="(v) => { try { window.MutStage && "
+               "window.MutStage.setAspect(v); } catch(e){} }")
+
+        # ---- tool row: resize (button toggles popup; Apply does the work) -
+        c["resize_btn"].click(self._toggle_resize_pop, outputs=[self.resize_pop])
+        c["apply_resize_btn"].click(
             self._apply_resize,
             inputs=[c["rs_w"], c["rs_h"], c["rs_lock"], c["rs_aspect"]],
             outputs=LOAD_OUTS)
+
+        # ---- tool row: speed (button toggles popup; slider/chk mutate) ----
+        c["speed_btn"].click(self._toggle_speed_pop, outputs=[self.speed_pop])
+        c["reverse_chk"].change(self._set_reverse, inputs=[c["reverse_chk"]],
+                                outputs=LOAD_OUTS)
+        c["speed"].change(self._set_speed, inputs=[c["speed"]], outputs=LOAD_OUTS)
+
+        # ---- tool row: flips (immediate) ----------------------------------
+        c["flip_h_btn"].click(self._toggle_flip_h, outputs=LOAD_OUTS)
+        c["flip_v_btn"].click(self._toggle_flip_v, outputs=LOAD_OUTS)
+
+        # ---- tool row: colour (button toggles the drawer; sliders mutate) -
+        c["color_btn"].click(self._toggle_color_drawer,
+                             outputs=[self.color_drawer])
         colour_inputs = [c["col_bri"], c["col_con"], c["col_sat"],
                          c["col_hue"], c["col_warm"], c["col_gamma"]]
         for slider in colour_inputs:
@@ -750,11 +803,11 @@ class Mutator(WAN2GPPlugin):
 
     # -- bridge handlers (§7.5) ---------------------------------------------
     def _tool_change_return(self):
-        """A LOAD_OUTS-shaped (21) refresh after a per-clip tool mutation."""
+        """A LOAD_OUTS-shaped (22) refresh after a per-clip tool mutation."""
         return self._refresh_full()
 
     def _tool_noop_return(self):
-        """A LOAD_OUTS-shaped (21) refresh for guarded/no-op tool handlers. No
+        """A LOAD_OUTS-shaped (22) refresh for guarded/no-op tool handlers. No
         edit happened, but the uniform refresh re-reports the current state (the
         envelope/render are cache hits, so this is cheap)."""
         return self._refresh_full()
@@ -808,6 +861,22 @@ class Mutator(WAN2GPPlugin):
         if sel is None:
             gr.Warning("Load a clip and select a segment first.")
         return sel
+
+    # -- tool-surface toggles (§H — each flips an instance bool, returns 1) --
+    def _toggle_resize_pop(self):
+        """Toggle the resize popup. Returns the single Group visibility update."""
+        self._resize_open = not self._resize_open
+        return gr.update(visible=self._resize_open)
+
+    def _toggle_speed_pop(self):
+        """Toggle the speed popup. Returns the single Group visibility update."""
+        self._speed_open = not self._speed_open
+        return gr.update(visible=self._speed_open)
+
+    def _toggle_color_drawer(self):
+        """Toggle the right-side colour drawer. Returns the single Group update."""
+        self._color_open = not self._color_open
+        return gr.update(visible=self._color_open)
 
     def _toggle_flip_h(self):
         sel = self._require_selection()

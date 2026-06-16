@@ -378,8 +378,6 @@
   function updateZoomVal() {
     var v = S.root && S.root.querySelector(".mut-zoomval");
     if (v) v.textContent = Math.round(S.pxPerSec) + " px/s";
-    var z = S.root && S.root.querySelector(".mut-zoom");
-    if (z && document.activeElement !== z) z.value = Math.round(S.pxPerSec);
   }
 
   // Fire a hidden/visible Gradio button by elem_id (flush state first so the Python
@@ -395,10 +393,9 @@
     root.innerHTML =
       '<div class="mut-tl">' +
       '  <div class="mut-tlbar">' +
-      '    <button class="mut-btn" data-act="zout" title="Zoom out">−</button>' +
-      '    <input type="range" class="mut-zoom" min="8" max="400" value="80" title="Zoom">' +
+      '    <button class="mut-btn" data-act="zoomout" title="Zoom out">−</button>' +
+      '    <button class="mut-btn" data-act="zoomin" title="Zoom in">+</button>' +
       '    <span class="mut-zoomval">80 px/s</span>' +
-      '    <button class="mut-btn" data-act="zin" title="Zoom in">+</button>' +
       '    <button class="mut-btn" data-act="fit" title="Zoom to fit">Fit</button>' +
       '    <button class="mut-btn" data-act="snap" title="Toggle snapping">Snap</button>' +
       '  </div>' +
@@ -420,16 +417,12 @@
       if (!el) return;
       e.preventDefault();
       switch (el.dataset.act) {
-        case "zin": setZoom(S.pxPerSec * 1.3); break;
-        case "zout": setZoom(S.pxPerSec / 1.3); break;
+        case "zoomin": setZoom(S.pxPerSec * 1.25); break;
+        case "zoomout": setZoom(S.pxPerSec * 0.8); break;
         case "fit": fit(); break;
         case "snap":
           S.snap = !S.snap; el.classList.toggle("active", S.snap); commit(); break;
       }
-    });
-    var zr = wrap.querySelector(".mut-zoom");
-    if (zr) zr.addEventListener("input", function (e) {
-      setZoom(parseInt(e.target.value, 10) || 80);
     });
     syncSnapBox();
     S.mounted = true;

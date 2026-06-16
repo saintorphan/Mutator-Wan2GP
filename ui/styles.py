@@ -117,21 +117,51 @@ button.mutator-tabbtn {
     max-height: 460px;
 }
 
-/* ---- LOAD / STRUCTURE row + INSPECTOR (full width, below the top row) - */
-/* The load row (upload / gallery / splice / rejoin) sits between the timeline
-   and the inspector; keep its buttons on one compact wrapping line. */
+/* ---- LOAD row (full width, below the top row) ------------------------ */
+/* The load row (upload / gallery) sits between the timeline and SEND; keep its
+   buttons on one compact wrapping line. */
 #mutator-loadrow { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
 
-/* The inspector group holds the SELECTED clip's edits (speed / reverse / flip /
-   resize / colour / undo / redo). Give it the same card shell as the zones. */
-#mutator-inspector {
-    border: 1px solid #2a2a33;
-    border-radius: 12px;
-    background: #131319;
-    padding: 12px 14px 14px;
-    margin: 0 0 14px 0;
+/* ====================================================================== */
+/*  v0.5 — TOOL ROW under the preview (uniform icon buttons) + popups      */
+/* ====================================================================== */
+
+/* The preview info line (speed · W×H of the selected clip) sits just under the
+   stage video, above the tool row. */
+#mutator-stage-info, #mutator-stage-info .prose {
+    color: #c7c7d1; font-size: 13px; margin: 8px 0 4px 2px;
 }
-#mutator-inspector .mutator-inspector-title { color: #00d9ff; }
+
+/* The tool row: a tight wrapping line of uniform square icon buttons matching
+   the transport size. */
+#mutator-tools {
+    display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0;
+}
+/* Uniform square-ish icon buttons (same height as the transport). */
+.mut-tool button, #mutator-tools button {
+    width: 40px; min-width: 40px; height: 36px;
+    padding: 0; font-size: 16px;
+}
+
+/* RESIZE / SPEED popups: boxed, raised panels rendered just under the tool row
+   (absolutely positioned over the stage column so they read as popups). */
+#mutator-resize-pop, #mutator-speed-pop {
+    position: absolute; z-index: 25; left: 8px;
+    background: #15151b; border: 1px solid #2a2a33; border-radius: 10px;
+    padding: 10px; min-width: 220px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+#mutator-resize-pop .mutator-pop-title,
+#mutator-speed-pop .mutator-pop-title,
+#mutator-color-drawer .mutator-pop-title { color: #00d9ff; }
+
+/* COLOUR drawer: a right-side panel inside the (position:relative) stage column. */
+#mutator-color-drawer {
+    position: absolute; top: 0; right: 0; width: 230px; height: 100%;
+    overflow: auto; z-index: 20;
+    background: #15151b; border-left: 1px solid #2a2a33;
+    padding: 10px;
+}
 
 /* ---- timeline mount spacing ------------------------------------------ */
 /* The timeline itself is fully styled under .mut-tl in timeline.css; here we
