@@ -82,33 +82,53 @@ def build_ui() -> dict:
             #      so the CSS sizes them 40×36 uniformly. ----------------------
             with gr.Row(elem_id="mutator-tools"):
                 c["crop_btn"] = gr.Button(
-                    "⛶", elem_classes=["mut-tool"], size="sm")
+                    "⛶", elem_classes=["mut-tool"], size="sm",
+                    elem_id="mut-tool-crop")
                 c["resize_btn"] = gr.Button(
-                    "⤢", elem_classes=["mut-tool"], size="sm")
+                    "⤢", elem_classes=["mut-tool"], size="sm",
+                    elem_id="mut-tool-resize")
                 c["speed_btn"] = gr.Button(
-                    "⏩", elem_classes=["mut-tool"], size="sm")
+                    "⏩", elem_classes=["mut-tool"], size="sm",
+                    elem_id="mut-tool-speed")
                 # Clear mirror glyphs: ◧ horizontal-flip, ⬓ vertical-flip.
                 c["flip_h_btn"] = gr.Button(
-                    "◧", elem_classes=["mut-tool"], size="sm")
+                    "◧", elem_classes=["mut-tool"], size="sm",
+                    elem_id="mut-tool-fliph")
                 c["flip_v_btn"] = gr.Button(
-                    "⬓", elem_classes=["mut-tool"], size="sm")
+                    "⬓", elem_classes=["mut-tool"], size="sm",
+                    elem_id="mut-tool-flipv")
                 c["color_btn"] = gr.Button(
-                    "🎨", elem_classes=["mut-tool"], size="sm")
+                    "🎨", elem_classes=["mut-tool"], size="sm",
+                    elem_id="mut-tool-color")
                 c["splice_btn"] = gr.Button(
-                    "✂", elem_classes=["mut-tool"], size="sm")
+                    "✂", elem_classes=["mut-tool"], size="sm",
+                    elem_id="mut-tool-splice")
                 c["rejoin_btn"] = gr.Button(
-                    "⛓", elem_classes=["mut-tool"], size="sm")
+                    "⛓", elem_classes=["mut-tool"], size="sm",
+                    elem_id="mut-tool-rejoin")
                 c["undo_btn"] = gr.Button(
                     "↶", elem_classes=["mut-tool"], size="sm",
+                    elem_id="mut-tool-undo",
                     interactive=False)
                 c["redo_btn"] = gr.Button(
                     "↷", elem_classes=["mut-tool"], size="sm",
+                    elem_id="mut-tool-redo",
                     interactive=False)
 
-            # ---- CROP aspect dropdown (hidden until crop mode is toggled) --
-            c["crop_aspect"] = gr.Dropdown(
-                ASPECT_CHOICES, value="free", label="Crop aspect",
-                elem_id="mutator-crop-aspect", visible=False)
+            # ---- CROP drawer (right-side; toggled by crop_btn) -------------
+            # Mirrors the colour drawer but with aspect-ratio choices. Opening it
+            # activates crop mode on the stage; picking an aspect constrains the
+            # draggable crop rectangle live (JS -> MutStage.setAspect).
+            with gr.Group(elem_id="mutator-crop-drawer", visible=False) \
+                    as crop_drawer:
+                gr.Markdown("**Crop**", elem_classes="mutator-pop-title")
+                gr.Markdown(
+                    "Drag the rectangle on the preview. Pick an aspect to lock it:",
+                    elem_classes="mutator-pop-hint")
+                c["crop_aspect"] = gr.Radio(
+                    ASPECT_CHOICES, value="free", label="Aspect",
+                    elem_id="mutator-crop-aspect")
+            c["crop_drawer"] = crop_drawer
 
             # ---- RESIZE popup (toggled by resize_btn) ---------------------
             with gr.Group(elem_id="mutator-resize-pop", visible=False) \

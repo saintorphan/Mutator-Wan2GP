@@ -155,13 +155,16 @@ button.mutator-tabbtn {
 #mutator-speed-pop .mutator-pop-title,
 #mutator-color-drawer .mutator-pop-title { color: #00d9ff; }
 
-/* COLOUR drawer: a right-side panel inside the (position:relative) stage column. */
-#mutator-color-drawer {
+/* COLOUR + CROP drawers: a right-side panel inside the (position:relative) stage
+   column. Only one is open at a time (the toggles are mutually exclusive). */
+#mutator-color-drawer,
+#mutator-crop-drawer {
     position: absolute; top: 0; right: 0; width: 230px; height: 100%;
     overflow: auto; z-index: 20;
     background: #15151b; border-left: 1px solid #2a2a33;
     padding: 10px;
 }
+#mutator-crop-drawer .mutator-pop-hint { color: #9aa; font-size: 12px; }
 
 /* ---- timeline mount spacing ------------------------------------------ */
 /* The timeline itself is fully styled under .mut-tl in timeline.css; here we

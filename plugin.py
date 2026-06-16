@@ -214,7 +214,8 @@ class Mutator(WAN2GPPlugin):
         #    runs). Both are parent-document modules now, so they share `window`
         #    and sync directly (window.MutStage <-> window.MutTimeline).
         try:
-            js = "\n".join(filter(None, [tw.timeline_js(), st.stage_js()]))
+            js = "\n".join(filter(None, [tw.timeline_js(), st.stage_js(),
+                                         self._tooltip_js()]))
             if js:
                 self.add_custom_js(js)
         except Exception:
@@ -313,9 +314,11 @@ class Mutator(WAN2GPPlugin):
             self.resize_pop = c["resize_pop"]
             self.speed_pop = c["speed_pop"]
             self.color_drawer = c["color_drawer"]
+            self.crop_drawer = c["crop_drawer"]
             self._resize_open = False
             self._speed_open = False
             self._color_open = False
+            self._crop_open = False
 
             # -- embedded send panels (SendTo wired in NATIVELY — always
             #    render; no external sendto package needed) ------------------
@@ -745,15 +748,15 @@ class Mutator(WAN2GPPlugin):
                 inputs=[self.state], outputs=LOAD_OUTS)
 
         # ---- tool row: crop (pure JS toggle) ------------------------------
-        # Crop is a JS-only toggle on the stage overlay: flip MutStage.cropMode
-        # and show/hide the aspect dropdown. fn=None → no server round-trip, no
-        # outputs (the crop rect still round-trips via mut_crop_to_py as before).
+        # Crop opens a RIGHT-SIDE drawer (aspect choices), like colour. The server
+        # toggles the drawer (and closes the colour drawer); the js flips the
+        # stage's crop overlay mode in lockstep. The crop rect round-trips via
+        # mut_crop_to_py as before; picking an aspect calls MutStage.setAspect.
         c["crop_btn"].click(
-            fn=None,
-            js="() => { try { var on = window.MutStage && "
-               "window.MutStage.toggleCropMode(); var d="
-               "document.getElementById('mutator-crop-aspect'); if(d) "
-               "d.style.display = on ? '' : 'none'; } catch(e){} }")
+            self._toggle_crop_drawer,
+            outputs=[self.crop_drawer, self.color_drawer],
+            js="() => { try { window.MutStage && "
+               "window.MutStage.toggleCropMode(); } catch(e){} }")
         c["crop_aspect"].change(
             fn=None,
             js="(v) => { try { window.MutStage && "
@@ -777,8 +780,12 @@ class Mutator(WAN2GPPlugin):
         c["flip_v_btn"].click(self._toggle_flip_v, outputs=LOAD_OUTS)
 
         # ---- tool row: colour (button toggles the drawer; sliders mutate) -
-        c["color_btn"].click(self._toggle_color_drawer,
-                             outputs=[self.color_drawer])
+        # Opening colour closes crop (and turns the stage crop mode off via js).
+        c["color_btn"].click(
+            self._toggle_color_drawer,
+            outputs=[self.color_drawer, self.crop_drawer],
+            js="() => { try { window.MutStage && "
+               "window.MutStage.setCropMode(false); } catch(e){} }")
         colour_inputs = [c["col_bri"], c["col_con"], c["col_sat"],
                          c["col_hue"], c["col_warm"], c["col_gamma"]]
         for slider in colour_inputs:
@@ -862,6 +869,34 @@ class Mutator(WAN2GPPlugin):
             gr.Warning("Load a clip and select a segment first.")
         return sel
 
+    # -- tooltips -----------------------------------------------------------
+    @staticmethod
+    def _tooltip_js() -> str:
+        """A tiny IIFE (shipped via add_custom_js) that sets a native ``title``
+        hover-tooltip on every tool button by elem_id, re-applying on re-render
+        via a MutationObserver. gr.HTML <script> would not execute — this must
+        ride in add_custom_js."""
+        tips = {
+            "mut-tool-crop": "Crop — open the aspect panel & drag the crop box on the preview",
+            "mut-tool-resize": "Resize — set output width/height or an aspect ratio",
+            "mut-tool-speed": "Speed — change playback speed / reverse the clip",
+            "mut-tool-fliph": "Flip horizontal (mirror left↔right)",
+            "mut-tool-flipv": "Flip vertical (mirror top↕bottom)",
+            "mut-tool-color": "Colour — open the colour-grade panel",
+            "mut-tool-splice": "Splice — cut the selected clip at the playhead",
+            "mut-tool-rejoin": "Rejoin — merge the selected clip with its neighbour",
+            "mut-tool-undo": "Undo",
+            "mut-tool-redo": "Redo",
+        }
+        return (
+            "(function(){ var T=" + json.dumps(tips) + ";"
+            "function ap(){ for(var id in T){ var e=document.getElementById(id);"
+            " if(!e) continue; var b=e.tagName==='BUTTON'?e:e.querySelector('button');"
+            " if(b){ b.title=T[id]; b.setAttribute('aria-label',T[id]); } } }"
+            "ap(); try{ new MutationObserver(ap).observe(document.body,"
+            "{childList:true,subtree:true}); }catch(e){} })();"
+        )
+
     # -- tool-surface toggles (§H — each flips an instance bool, returns 1) --
     def _toggle_resize_pop(self):
         """Toggle the resize popup. Returns the single Group visibility update."""
@@ -874,9 +909,23 @@ class Mutator(WAN2GPPlugin):
         return gr.update(visible=self._speed_open)
 
     def _toggle_color_drawer(self):
-        """Toggle the right-side colour drawer. Returns the single Group update."""
+        """Toggle the right-side colour drawer; opening it closes the crop drawer
+        (they share the right panel). Returns ``(colour, crop)`` visibility."""
         self._color_open = not self._color_open
-        return gr.update(visible=self._color_open)
+        if self._color_open:
+            self._crop_open = False
+        return (gr.update(visible=self._color_open),
+                gr.update(visible=self._crop_open))
+
+    def _toggle_crop_drawer(self):
+        """Toggle the right-side crop drawer (aspect choices); opening it closes
+        the colour drawer. Returns ``(crop, colour)`` visibility. Crop overlay
+        mode on the stage is flipped in lockstep by the button's js."""
+        self._crop_open = not self._crop_open
+        if self._crop_open:
+            self._color_open = False
+        return (gr.update(visible=self._crop_open),
+                gr.update(visible=self._color_open))
 
     def _toggle_flip_h(self):
         sel = self._require_selection()
