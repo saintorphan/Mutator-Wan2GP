@@ -793,6 +793,13 @@ class Mutator(WAN2GPPlugin):
                           outputs=LOAD_OUTS)
         c["col_reset_btn"].click(self._reset_colour, outputs=LOAD_OUTS)
 
+        # ---- drawer collapse toggles (»/«) — pure JS, slide the right-side
+        #      drawer to a thin tab so it stops covering the preview ----------
+        c["crop_collapse"].click(fn=None, js=self._drawer_collapse_js(
+            "mutator-crop-drawer", "mut-crop-collapse"))
+        c["color_collapse"].click(fn=None, js=self._drawer_collapse_js(
+            "mutator-color-drawer", "mut-color-collapse"))
+
         # ---- splice / rejoin / undo / redo (§7.7) -------------------------
         c["splice_btn"].click(self._splice, outputs=LOAD_OUTS)
         c["rejoin_btn"].click(self._rejoin, outputs=LOAD_OUTS)
@@ -895,6 +902,19 @@ class Mutator(WAN2GPPlugin):
             " if(b){ b.title=T[id]; b.setAttribute('aria-label',T[id]); } } }"
             "ap(); try{ new MutationObserver(ap).observe(document.body,"
             "{childList:true,subtree:true}); }catch(e){} })();"
+        )
+
+    @staticmethod
+    def _drawer_collapse_js(drawer_id: str, btn_id: str) -> str:
+        """JS for a drawer's »/« collapse toggle: add/remove the ``mut-collapsed``
+        class (CSS slides the drawer to a thin right-edge tab so it stops covering
+        the preview) and flip the button glyph. Pure client-side, no server."""
+        return (
+            "() => { var d=document.getElementById('" + drawer_id + "');"
+            " if(!d) return; var on=d.classList.toggle('mut-collapsed');"
+            " var w=document.getElementById('" + btn_id + "');"
+            " var b=w&&(w.tagName==='BUTTON'?w:w.querySelector('button'));"
+            " if(b) b.textContent = on ? '\\u00ab' : '\\u00bb'; }"
         )
 
     # -- tool-surface toggles (§H — each flips an instance bool, returns 1) --

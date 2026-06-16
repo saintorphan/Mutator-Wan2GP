@@ -190,6 +190,23 @@ button.mutator-tabbtn {
     overflow: auto; z-index: 20;
     background: #15151b; border-left: 1px solid #2a2a33;
     padding: 10px;
+    transition: width 0.15s ease;
+}
+/* Collapsed: the drawer shrinks to a thin right-edge tab showing only the
+   »/« toggle, so the preview is fully visible behind it (no blocker). */
+#mutator-color-drawer.mut-collapsed,
+#mutator-crop-drawer.mut-collapsed {
+    width: 32px; min-width: 32px; padding: 8px 2px; overflow: hidden;
+}
+/* Hide the drawer's content blocks when collapsed (Gradio wraps them in a
+   .styler div and tags each as .block; the toggle button is NOT a .block, so it
+   stays). Leaves just the thin »/« tab. */
+#mutator-color-drawer.mut-collapsed .block,
+#mutator-crop-drawer.mut-collapsed .block { display: none !important; }
+/* The collapse toggle button: a slim full-width strip pinned at the drawer top. */
+.mut-drawer-toggle button {
+    width: 100%; min-width: 0; height: 26px; padding: 0;
+    font-size: 15px; line-height: 1;
 }
 #mutator-crop-drawer .mutator-pop-hint { color: #9aa; font-size: 12px; }
 

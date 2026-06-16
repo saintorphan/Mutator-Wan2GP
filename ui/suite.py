@@ -122,6 +122,11 @@ def build_ui() -> dict:
             # draggable crop rectangle live (JS -> MutStage.setAspect).
             with gr.Group(elem_id="mutator-crop-drawer", visible=False) \
                     as crop_drawer:
+                # Collapse toggle (»/«) — slides the drawer to a thin tab so it
+                # stops covering the preview. Pure JS (see plugin._wire).
+                c["crop_collapse"] = gr.Button(
+                    "»", elem_id="mut-crop-collapse",
+                    elem_classes=["mut-drawer-toggle"], size="sm")
                 gr.Markdown("**Crop**", elem_classes="mutator-pop-title")
                 gr.Markdown(
                     "Drag the rectangle on the preview. Pick an aspect to lock it:",
@@ -160,6 +165,9 @@ def build_ui() -> dict:
             # ---- COLOUR drawer (right-side; toggled by color_btn) ---------
             with gr.Group(elem_id="mutator-color-drawer", visible=False) \
                     as color_drawer:
+                c["color_collapse"] = gr.Button(
+                    "»", elem_id="mut-color-collapse",
+                    elem_classes=["mut-drawer-toggle"], size="sm")
                 gr.Markdown("**Colour**", elem_classes="mutator-pop-title")
                 c["col_bri"] = gr.Slider(50, 150, value=100, step=1, label="Bright")
                 c["col_con"] = gr.Slider(50, 150, value=100, step=1, label="Contrast")
