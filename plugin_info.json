@@ -1,7 +1,7 @@
 {
   "name": "Mutator",
   "author": "saintorphan",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Per-clip single-track video editor: load a clip (gallery / upload / SendTo), build an ordered timeline of segments, then per-segment trim, splice, rejoin, draggable crop with aspect presets, resize, flip, speed, reverse and colour — with undo/redo. Save in place or as a copy; send a frame or the edited clip onward via SendTo or Continue-Video.",
   "date": "2026-06-15",
   "wan2gp_version": "12.23",

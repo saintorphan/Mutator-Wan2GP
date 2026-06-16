@@ -1,10 +1,12 @@
-"""Mutator — a Wan2GP plugin (v0.2: per-clip single-track editor).
+"""Mutator — a Wan2GP plugin (v0.3: per-clip single-track editor).
 
-One main-webui tab laid out as three vertical zones — WORKSPACE (a source
-``gr.Video`` + a compact tool row + a draggable single-track timeline of
-Segments + a togglable crop canvas) → RESULT (a ``gr.Video`` of the SELECTED
-segment's render + info) → SEND (save in place / save as copy + an embedded
-SendTo frame panel + "Send edited clip"). The timeline is ONE ordered track of
+One main-webui tab laid out top to bottom — STAGE (the always-on crop canvas:
+the selected clip's source frame at the playhead with a draggable crop rectangle
+drawn directly on it) → TIMELINE (a draggable single-track timeline of Segments)
+→ LOAD / STRUCTURE row (upload / gallery / splice / rejoin) → INSPECTOR (the
+SELECTED clip's edits) → RESULT (a ``gr.Video`` of the SELECTED segment's render
++ info) → SEND (save in place / save as copy + an embedded SendTo frame panel +
+"Send edited clip"). The timeline is ONE ordered track of
 :class:`core.model.Segment`\\ s (it starts as one segment spanning the whole
 source). Selecting a segment loads ITS OWN edits into the tools + Result. Each
 segment carries independent trim / crop / resize / flip / speed / reverse /
@@ -63,9 +65,9 @@ class Mutator(WAN2GPPlugin):
         try:
             self.version = json.loads(
                 (Path(__file__).parent / "plugin_info.json").read_text()
-            ).get("version", "0.2.0")
+            ).get("version", "0.3.0")
         except Exception:
-            self.version = "0.2.0"
+            self.version = "0.3.0"
         self.description = (
             "Per-clip single-track video editor: load a clip (gallery / upload / "
             "SendTo), build an ordered timeline of segments, then per-segment trim, "
@@ -87,9 +89,6 @@ class Mutator(WAN2GPPlugin):
         self._clip_targets_by_label: dict = {}
         self._sendto_enqueue = None
         self._api = None
-        # Whether the crop panel is currently open (gr.update(visible=…) does not
-        # mutate the component object, so track the toggle state here).
-        self._crop_open = False
 
     # -- inbox alias --------------------------------------------------------
     @staticmethod
@@ -287,8 +286,8 @@ class Mutator(WAN2GPPlugin):
             self.tl_from_py = c["tl_from_py"]
             self.crop_to_py = c["crop_to_py"]
             self.crop_from_py = c["crop_from_py"]
-            self.crop_panel = c["crop_panel"]
-            self.src_video = c["src_video"]
+            self.upload_btn = c["upload_btn"]
+            self.load_gallery_btn = c["load_gallery_btn"]
             self.result_video = c["result_video"]
             self.result_info = c["result_info"]
             self.status_md = c["status_md"]
@@ -316,14 +315,14 @@ class Mutator(WAN2GPPlugin):
             self._wire(c)
 
         # ---------------------------------------------------------------- #
-        #  on_tab_outputs — the refresh contract. EVERY handler that targets   #
-        #  these must return values in this exact order (or a documented        #
-        #  prefix of it). on_tab_select aligns 1:1 with this full list.         #
+        #  LOAD_OUTS — the v0.3 refresh contract (21 outputs). EVERY handler   #
+        #  that targets a full refresh must return values in this exact order; #
+        #  on_tab_select / the loaders / _on_tl_change all align 1:1 with it.  #
         #                                                                       #
         #  [ 0] tl_from_py        (op-envelope -> applyOp in the browser)        #
-        #  [ 1] result_video      (selected segment render path)                #
-        #  [ 2] result_info       (info markdown)                               #
-        #  [ 3] src_video         (the loaded source player)                    #
+        #  [ 1] crop_from_py      (STAGE frame injector — the still on the stage)#
+        #  [ 2] result_video      (selected segment render path)                #
+        #  [ 3] result_info       (info markdown)                               #
         #  [ 4..15] *TOOL_OUTS (12): rs_w, rs_h, rs_lock, rs_aspect, speed,      #
         #           reverse_chk, col_bri, col_con, col_sat, col_hue, col_warm,   #
         #           col_gamma                                                    #
@@ -331,16 +330,125 @@ class Mutator(WAN2GPPlugin):
         #  [17] redo_btn          (interactive update)                          #
         #  [18] save_inplace_btn  (interactive update)                          #
         #  [19] save_copy_btn     (interactive update)                          #
+        #  [20] status_md         (status markdown)                             #
         # ---------------------------------------------------------------- #
         self.on_tab_outputs = self._refresh_outs()
         return c
 
     def _refresh_outs(self) -> list:
-        return ([self.tl_from_py, self.result_video, self.result_info,
-                 self.src_video]
+        """LOAD_OUTS — the 21-wide full-refresh output contract (see create_ui)."""
+        return ([self.tl_from_py, self.crop_from_py, self.result_video,
+                 self.result_info]
                 + list(self._tool_outs)
                 + [self.undo_btn, self.redo_btn,
-                   self.save_inplace_btn, self.save_copy_btn])
+                   self.save_inplace_btn, self.save_copy_btn, self.status_md])
+
+    # -- full refresh (LOAD_OUTS-shaped, 21 wide) ---------------------------
+    def _stage_frame_update(self):
+        """The crop_from_py (STAGE) update for the selected segment: the source
+        frame at the current playhead, pushed onto the always-on crop canvas via
+        the one-shot injector. Returns ``gr.update()`` (no change) when nothing is
+        selected or the extract fails — never raises."""
+        sel = self._track.selected()
+        if sel is None:
+            return gr.update()
+        try:
+            at_src = self._playhead_src_sec(sel)
+            uri = render.extract_frame(sel, at_src)
+            if not uri:
+                return gr.update()
+            html = crop.crop_bridge_html(uri, sel.id, sel.src_w, sel.src_h,
+                                         nonce=str(time.time()))
+            return gr.update(value=html)
+        except Exception:
+            traceback.print_exc()
+            return gr.update()
+
+    def _refresh_full(self, status: str = "") -> list:
+        """A LOAD_OUTS-shaped (21) full refresh from the current Track state:
+        timeline envelope, STAGE frame, RESULT render + info, the 12 inspector
+        updates, undo/redo + save interactivity, and the status markdown. Safe
+        neutral updates when no clip is selected (no stage change, empty result,
+        disabled saves)."""
+        seg = self._track.selected()
+        env = self._env_after()
+        if seg is None:
+            si, sc = self._save_interactivity()
+            return [env, gr.update(), None, "",
+                    *self._selection_values(None),
+                    gr.update(interactive=self._track.can_undo()),
+                    gr.update(interactive=self._track.can_redo()),
+                    si, sc, status]
+        stage = self._stage_frame_update()
+        rp = self._render_selected()
+        si, sc = self._save_interactivity()
+        return [env, stage, rp, self._result_info(seg),
+                *self._selection_values(seg),
+                gr.update(interactive=self._track.can_undo()),
+                gr.update(interactive=self._track.can_redo()),
+                si, sc, status]
+
+    # -- loading (upload / gallery / ingest) --------------------------------
+    def _ingest(self, path, is_upload) -> list:
+        """Resolve, probe and load (or append) ``path`` onto the track, select the
+        new segment, rebaseline undo, and return a full LOAD_OUTS refresh. Surfaces
+        a Warning + neutral refresh when the path is not a usable video."""
+        if not path or not os.path.exists(str(path)):
+            gr.Warning("Couldn't find that file to load.")
+            return self._refresh_full("⚠️ File not found.")
+        path = str(path)
+        try:
+            probe_info = ffmpeg.probe(path, get_video_info=self._gvi())
+        except Exception:
+            traceback.print_exc()
+            gr.Warning("That file isn't a readable video — see the console.")
+            return self._refresh_full("⚠️ Not a readable video.")
+        self._src_dur[path] = float(probe_info.get("duration") or 0.0)
+        if self._track.segments:
+            self._track.snapshot()
+            self._track.append_source(path, probe_info)
+        else:
+            self._track.load_source(path, probe_info)
+        name = os.path.basename(path)
+        src = "upload" if is_upload else "gallery"
+        return self._refresh_full(f"📂 Loaded `{name}` ({src}).")
+
+    def _on_upload(self, fileobj) -> list:
+        """gr.UploadButton.upload → ingest the uploaded temp file. The value is a
+        path string (single file) or an object exposing ``.name``; normalise it."""
+        path = getattr(fileobj, "name", None) or fileobj
+        if isinstance(path, (list, tuple)):
+            path = path[0] if path else None
+            path = getattr(path, "name", None) or path
+        return self._ingest(path, is_upload=True)
+
+    def _current_selection_path(self, state):
+        """(path, kind) for the item selected in the host preview gallery. kind is
+        'audio' (rejected), 'file', or None when nothing is selected. Carried from
+        v0.1 / the sibling plugins' contract."""
+        gen = (state or {}).get("gen", {}) or {}
+        if gen.get("current_gallery_source") == "audio":
+            return None, "audio"
+        files = gen.get("file_list") or []
+        if not files:
+            return None, None
+        idx = gen.get("selected", 0) or 0
+        if idx < 0 or idx >= len(files):
+            idx = 0
+        return files[idx], "file"
+
+    def _on_load_gallery(self, state, gallery_tab=None) -> list:
+        """⟳ From gallery selection → ingest the host gallery's selected clip.
+        Rejects audio picks (current_gallery_source == 'audio' OR the audio gallery
+        tab) with a Warning + neutral refresh."""
+        path, kind = self._current_selection_path(state)
+        if kind == "audio" or gallery_tab == 1:
+            gr.Warning("That's an audio selection — pick a video in the gallery.")
+            return self._refresh_full("⚠️ Audio selection — pick a video.")
+        if not path:
+            gr.Warning("Select a clip in the gallery first.")
+            return self._refresh_full("⚠️ Nothing selected in the gallery.")
+        return self._ingest(path, is_upload=False)
 
     # -- embedded SendTo panels (create_ui helpers) -------------------------
     def _build_frame_panel(self, c):
@@ -381,7 +489,7 @@ class Mutator(WAN2GPPlugin):
         clip_targets = []
         if callable(getattr(self, "get_current_model_settings", None)):
             clip_targets.append(
-                {"label": "▶ Continue Video (Media Generator)", "kind": "continue"})
+                {"label": "Continue Video (Media Generator)", "kind": "continue"})
         try:
             from .core import sendout
             self._sendto_enqueue = sendout.enqueue
@@ -553,67 +661,67 @@ class Mutator(WAN2GPPlugin):
 
     # -- wiring (§7.5–7.7) --------------------------------------------------
     def _wire(self, c):
+        # Every selection/edit-affecting handler returns a uniform LOAD_OUTS
+        # (21-wide) refresh — no per-handler arity drift. The full contract +
+        # order is documented in create_ui.
+        LOAD_OUTS = self._refresh_outs()
+
         # ---- timeline bridge (§7.5) ---------------------------------------
         # Py -> JS: run applyOp in the browser, no server round-trip.
         self.tl_from_py.change(fn=None, inputs=[self.tl_from_py], outputs=[],
                                js=tw.APPLY_OP_JS, show_progress="hidden")
-        # JS -> Py: full edit JSON on debounced change. Selecting a clip lands
-        # here and loads its edits into the tools + Result.
+        # JS -> Py: full edit JSON on debounced change. Selecting a clip OR
+        # scrubbing the playhead lands here; the return includes the STAGE frame
+        # (LOAD_OUTS index 1) so the still tracks the playhead.
         self.tl_to_py.change(
             self._on_tl_change, inputs=[self.tl_to_py],
-            outputs=[self.result_video, self.result_info, *self._tool_outs,
-                     self.undo_btn, self.redo_btn,
-                     self.save_inplace_btn, self.save_copy_btn],
-            show_progress="hidden")
+            outputs=LOAD_OUTS, show_progress="hidden")
 
         # ---- crop bridge (§7.5) -------------------------------------------
         # Crop JS -> Py: {seg_id,x,y,w,h} (source px).
         self.crop_to_py.change(
             self._on_crop, inputs=[self.crop_to_py],
-            outputs=[self.tl_from_py, self.result_video, self.result_info],
-            show_progress="hidden")
+            outputs=LOAD_OUTS, show_progress="hidden")
+
+        # ---- load / structure (§7.6) --------------------------------------
+        # OS file browser → ingest the uploaded temp path.
+        self.upload_btn.upload(
+            self._on_upload, inputs=[self.upload_btn], outputs=LOAD_OUTS)
+        # Host gallery selection → ingest the selected clip. Pass the optional
+        # current_gallery_tab component if the host provided it (defensive: a
+        # lambda emitting None otherwise so the input arity is stable).
+        gal_tab = getattr(self, "current_gallery_tab", None)
+        if gal_tab is not None:
+            self.load_gallery_btn.click(
+                self._on_load_gallery, inputs=[self.state, gal_tab],
+                outputs=LOAD_OUTS)
+        else:
+            self.load_gallery_btn.click(
+                lambda state: self._on_load_gallery(state, None),
+                inputs=[self.state], outputs=LOAD_OUTS)
 
         # ---- per-clip tools (§7.6) ----------------------------------------
-        tool_outs = [self.tl_from_py, self.result_video, self.result_info,
-                     self.undo_btn, self.redo_btn,
-                     self.save_inplace_btn, self.save_copy_btn]
-        c["flip_h_btn"].click(self._toggle_flip_h, outputs=tool_outs)
-        c["flip_v_btn"].click(self._toggle_flip_v, outputs=tool_outs)
+        c["flip_h_btn"].click(self._toggle_flip_h, outputs=LOAD_OUTS)
+        c["flip_v_btn"].click(self._toggle_flip_v, outputs=LOAD_OUTS)
         c["reverse_chk"].change(self._set_reverse, inputs=[c["reverse_chk"]],
-                                outputs=tool_outs)
-        c["speed"].change(self._set_speed, inputs=[c["speed"]], outputs=tool_outs)
+                                outputs=LOAD_OUTS)
+        c["speed"].change(self._set_speed, inputs=[c["speed"]], outputs=LOAD_OUTS)
         c["resize_btn"].click(
             self._apply_resize,
             inputs=[c["rs_w"], c["rs_h"], c["rs_lock"], c["rs_aspect"]],
-            outputs=tool_outs)
+            outputs=LOAD_OUTS)
         colour_inputs = [c["col_bri"], c["col_con"], c["col_sat"],
                          c["col_hue"], c["col_warm"], c["col_gamma"]]
         for slider in colour_inputs:
-            slider.change(self._set_colour, inputs=colour_inputs, outputs=tool_outs)
-        # Reset colour also resets the six sliders, so extend its outputs.
-        c["col_reset_btn"].click(
-            self._reset_colour,
-            outputs=tool_outs + colour_inputs)
-
-        # ---- crop toggle (§7.6) -------------------------------------------
-        c["crop_toggle"].click(
-            self._toggle_crop,
-            outputs=[self.crop_panel, self.crop_from_py])
+            slider.change(self._set_colour, inputs=colour_inputs,
+                          outputs=LOAD_OUTS)
+        c["col_reset_btn"].click(self._reset_colour, outputs=LOAD_OUTS)
 
         # ---- splice / rejoin / undo / redo (§7.7) -------------------------
-        struct_outs = [self.tl_from_py, self.result_video, self.result_info,
-                       self.undo_btn, self.redo_btn,
-                       self.save_inplace_btn, self.save_copy_btn, self.status_md]
-        c["splice_btn"].click(self._splice, outputs=struct_outs)
-        c["rejoin_btn"].click(self._rejoin, outputs=struct_outs)
-        # Undo/Redo must reload the tool row too (restored state), so they target
-        # the full refresh-style set: result + *TOOL_OUTS + undo/redo + saves.
-        hist_outs = ([self.tl_from_py, self.result_video, self.result_info]
-                     + list(self._tool_outs)
-                     + [self.undo_btn, self.redo_btn,
-                        self.save_inplace_btn, self.save_copy_btn])
-        c["undo_btn"].click(self._undo, outputs=hist_outs)
-        c["redo_btn"].click(self._redo, outputs=hist_outs)
+        c["splice_btn"].click(self._splice, outputs=LOAD_OUTS)
+        c["rejoin_btn"].click(self._rejoin, outputs=LOAD_OUTS)
+        c["undo_btn"].click(self._undo, outputs=LOAD_OUTS)
+        c["redo_btn"].click(self._redo, outputs=LOAD_OUTS)
 
         # ---- save / send (§7.8) -------------------------------------------
         c["save_inplace_btn"].click(self._save_inplace, outputs=[self.status_md])
@@ -626,30 +734,21 @@ class Mutator(WAN2GPPlugin):
 
     # -- bridge handlers (§7.5) ---------------------------------------------
     def _tool_change_return(self):
-        """The 7-tuple every per-clip tool handler returns:
-        (tl_from_py, result_video, result_info, undo, redo, save_inplace, save_copy)."""
-        env = self._env_after()
-        seg = self._track.selected()
-        rp = self._render_selected()
-        si, sc = self._save_interactivity()
-        return (env, rp, self._result_info(seg),
-                gr.update(interactive=self._track.can_undo()),
-                gr.update(interactive=self._track.can_redo()), si, sc)
+        """A LOAD_OUTS-shaped (21) refresh after a per-clip tool mutation."""
+        return self._refresh_full()
 
     def _tool_noop_return(self):
-        """No-op variant (no envelope rebuilt) for guarded tool handlers."""
-        seg = self._track.selected()
-        si, sc = self._save_interactivity()
-        return (gr.update(), gr.update(), self._result_info(seg),
-                gr.update(interactive=self._track.can_undo()),
-                gr.update(interactive=self._track.can_redo()), si, sc)
+        """A LOAD_OUTS-shaped (21) refresh for guarded/no-op tool handlers. No
+        edit happened, but the uniform refresh re-reports the current state (the
+        envelope/render are cache hits, so this is cheap)."""
+        return self._refresh_full()
 
     def _on_tl_change(self, payload: str):
         """JS -> Py: a debounced full edit-JSON arrived. Apply onto the track,
         fork undo ONLY when the pixel content changed (a pure selection/playhead
-        change must not), re-render the now-selected segment, and reload the tool
-        row + Result. Returns 1:1 with [result_video, result_info, *TOOL_OUTS,
-        undo, redo, save_inplace, save_copy]."""
+        change must not), then return a full LOAD_OUTS refresh — which includes
+        the STAGE frame at index 1, so selecting a clip or scrubbing the playhead
+        updates the still on the stage."""
         if payload:
             old_doc = self._track._document()
             try:
@@ -665,33 +764,27 @@ class Mutator(WAN2GPPlugin):
                         del self._track._undo[: len(self._track._undo) - 30]
                     self._track._redo.clear()
                     self._last_sig = new_sig
-        seg = self._track.selected()
-        rp = self._render_selected()
-        si, sc = self._save_interactivity()
-        return (rp, self._result_info(seg), *self._selection_values(seg),
-                gr.update(interactive=self._track.can_undo()),
-                gr.update(interactive=self._track.can_redo()), si, sc)
+        return self._refresh_full()
 
     def _on_crop(self, payload: str):
         """Crop JS -> Py: {seg_id,x,y,w,h} (source px). Apply to that segment
-        (set_edit rounds w/h even, clamps to source), re-render, return
-        (tl_from_py, result_video, result_info)."""
+        (set_edit rounds w/h even, clamps to source), re-render, and return a full
+        LOAD_OUTS refresh. The stage re-push reloads the same source frame (the
+        crop rect the user drew stays drawn on the canvas)."""
         if not payload:
-            return gr.update(), gr.update(), gr.update()
+            return self._refresh_full()
         try:
             d = json.loads(payload)
         except Exception:
-            return gr.update(), gr.update(), gr.update()
+            return self._refresh_full()
         seg_id = d.get("seg_id")
         if not seg_id or self._track.index_of(seg_id) < 0:
-            return gr.update(), gr.update(), gr.update()
+            return self._refresh_full()
         crop_rect = {"x": d.get("x", 0), "y": d.get("y", 0),
                      "w": d.get("w", 0), "h": d.get("h", 0)}
         self._track.snapshot()
         self._track.set_edit(seg_id, crop=crop_rect)
-        env = self._env_after()
-        rp = self._render_selected()
-        return env, rp, self._result_info(self._track.selected())
+        return self._refresh_full()
 
     # -- per-clip tool handlers (§7.6) --------------------------------------
     def _require_selection(self):
@@ -807,61 +900,23 @@ class Mutator(WAN2GPPlugin):
         return self._tool_change_return()
 
     def _reset_colour(self):
+        """Reset the selected segment's colour to neutral. The six slider values
+        flow back through the uniform LOAD_OUTS refresh (via _selection_values),
+        so no separate slider outputs are needed."""
         sel = self._require_selection()
-        neutral_sliders = [
-            gr.update(value=COLOUR_NEUTRAL["brightness"]),
-            gr.update(value=COLOUR_NEUTRAL["contrast"]),
-            gr.update(value=COLOUR_NEUTRAL["saturation"]),
-            gr.update(value=COLOUR_NEUTRAL["hue"]),
-            gr.update(value=COLOUR_NEUTRAL["warmth"]),
-            gr.update(value=COLOUR_NEUTRAL["gamma"]),
-        ]
-        if sel is None:
-            return (*self._tool_noop_return(), *neutral_sliders)
-        if sel.is_neutral_colour:
-            return (*self._tool_noop_return(), *neutral_sliders)
+        if sel is None or sel.is_neutral_colour:
+            return self._tool_noop_return()
         self._track.snapshot()
         self._track.set_edit(sel.id, colour=dict(COLOUR_NEUTRAL))
         gr.Info("Colour reset.")
-        return (*self._tool_change_return(), *neutral_sliders)
-
-    def _toggle_crop(self):
-        """Flip the crop panel's visibility. When OPENING, push the selected
-        segment's source frame into the canvas via the one-shot injector."""
-        if self._crop_open:
-            self._crop_open = False
-            return gr.update(visible=False), gr.update()
-        sel = self._track.selected()
-        if sel is None:
-            gr.Warning("Select a clip first to crop it.")
-            return gr.update(visible=False), gr.update()
-        frame_uri = render.extract_frame(sel)
-        if not frame_uri:
-            gr.Warning("Couldn't extract a frame to crop — see the console.")
-            return gr.update(visible=False), gr.update()
-        html = crop.crop_bridge_html(frame_uri, sel.id, sel.src_w, sel.src_h,
-                                     nonce=str(time.time()))
-        self._crop_open = True
-        return gr.update(visible=True), gr.update(value=html)
+        return self._tool_change_return()
 
     # -- splice / rejoin / undo / redo (§7.7) -------------------------------
-    def _struct_return(self, status: str, *, rebaseline: bool):
-        """The 8-tuple splice/rejoin return: (tl_from_py, result_video,
-        result_info, undo, redo, save_inplace, save_copy, status_md)."""
-        env = self._env_after() if rebaseline else self._load_envelope()
-        seg = self._track.selected()
-        rp = self._render_selected()
-        si, sc = self._save_interactivity()
-        return (env, rp, self._result_info(seg),
-                gr.update(interactive=self._track.can_undo()),
-                gr.update(interactive=self._track.can_redo()),
-                si, sc, status)
-
     def _splice(self):
         sel = self._track.selected()
         if sel is None:
             gr.Warning("Select a clip to splice.")
-            return self._struct_return("⚠️ Nothing selected.", rebaseline=False)
+            return self._refresh_full("⚠️ Nothing selected.")
         at_src = self._playhead_src_sec(sel)
         self._track.snapshot()
         ids = self._track.splice(sel.id, at_src)
@@ -870,50 +925,38 @@ class Mutator(WAN2GPPlugin):
             if self._track._undo:
                 self._track._undo.pop()
             gr.Warning("Move the playhead inside the clip to splice.")
-            return self._struct_return("⚠️ Playhead isn't inside the clip.",
-                                       rebaseline=False)
+            return self._refresh_full("⚠️ Playhead isn't inside the clip.")
         gr.Info("Spliced.")
-        return self._struct_return(f"✂ Spliced at {at_src:.2f}s.", rebaseline=True)
+        return self._refresh_full(f"✂ Spliced at {at_src:.2f}s.")
 
     def _rejoin(self):
         sel = self._track.selected()
         if sel is None:
             gr.Warning("Select a clip to rejoin.")
-            return self._struct_return("⚠️ Nothing selected.", rebaseline=False)
+            return self._refresh_full("⚠️ Nothing selected.")
         self._track.snapshot()
         ok = self._track.rejoin(sel.id)
         if not ok:
             if self._track._undo:
                 self._track._undo.pop()
             gr.Warning("No contiguous same-source clip to rejoin.")
-            return self._struct_return("⚠️ Nothing to rejoin.", rebaseline=False)
+            return self._refresh_full("⚠️ Nothing to rejoin.")
         gr.Info("Rejoined.")
-        return self._struct_return("⛓ Rejoined adjacent clips.", rebaseline=True)
-
-    def _history_return(self):
-        """The undo/redo return: (tl_from_py, result_video, result_info,
-        *TOOL_OUTS, undo, redo, save_inplace, save_copy)."""
-        env = self._env_after()
-        seg = self._track.selected()
-        rp = self._render_selected()
-        si, sc = self._save_interactivity()
-        return (env, rp, self._result_info(seg), *self._selection_values(seg),
-                gr.update(interactive=self._track.can_undo()),
-                gr.update(interactive=self._track.can_redo()), si, sc)
+        return self._refresh_full("⛓ Rejoined adjacent clips.")
 
     def _undo(self):
         if not self._track.undo():
             gr.Warning("Nothing to undo.")
         else:
             gr.Info("Undone.")
-        return self._history_return()
+        return self._refresh_full()
 
     def _redo(self):
         if not self._track.redo():
             gr.Warning("Nothing to redo.")
         else:
             gr.Info("Redone.")
-        return self._history_return()
+        return self._refresh_full()
 
     # -- save / send (§7.8) -------------------------------------------------
     @staticmethod
@@ -1047,8 +1090,9 @@ class Mutator(WAN2GPPlugin):
     def on_tab_select(self, state: dict):
         """Drain the SendTo inbox on every tab entry. Ingest the most-recent
         queued path — probing it, recording its source-duration ceiling, then
-        loading (fresh track) or appending (extend an existing track). Returns
-        values 1:1 with self.on_tab_outputs; a no-op refresh when nothing queued."""
+        loading (fresh track) or appending (extend an existing track), and pushing
+        the new clip's frame onto the STAGE. Returns a LOAD_OUTS-shaped list (1:1
+        with self.on_tab_outputs); a no-op refresh when nothing queued."""
         try:
             items = inbox.drain(state)
             if items:
@@ -1060,16 +1104,10 @@ class Mutator(WAN2GPPlugin):
                     self._track.append_source(path, probe_info)
                 else:
                     self._track.load_source(path, probe_info)
-                self._last_sig = self._track.content_sig()
-                seg = self._track.selected()
-                rp = self._render_selected()
-                si, sc = self._save_interactivity()
-                return [self._load_envelope(), rp, self._result_info(seg),
-                        path, *self._selection_values(seg),
-                        gr.update(interactive=self._track.can_undo()),
-                        gr.update(interactive=self._track.can_redo()), si, sc]
+                name = os.path.basename(str(path))
+                return self._refresh_full(f"📥 Received `{name}` via SendTo.")
         except Exception:
             traceback.print_exc()
         # Nothing queued (or a probe failed): no-op updates aligned 1:1 with
-        # on_tab_outputs.
+        # on_tab_outputs (LOAD_OUTS).
         return [gr.update() for _ in self.on_tab_outputs]
